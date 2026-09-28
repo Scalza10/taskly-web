@@ -8,8 +8,11 @@ Uncommitted changes are not deployed; commit first. Two people deploying overwri
 other's code on the VM, so pull before you deploy.
 If the SSH key has a passphrase you are asked for it twice (upload, then restart),
 unless the key is loaded in ssh-agent.
+On the VM it builds the new image while the old app keeps serving, backs up the database
+(~/taskly/data/backups, newest 10), migrates it with the new image, and only then replaces
+the app. A failing build or migration stops there: the old app keeps running.
 Only ~/taskly on the VM changes. Caddy (~/proxy), Reels and any other app keep running,
-and ~/taskly/data (the SQLite file) and ~/taskly/.env are never touched.
+and ~/taskly/.env is never touched.
 #>
 param(
     [string]$Branch = "main",
@@ -50,12 +53,26 @@ try {
 
     Invoke-Native "Packing $Branch" { git archive --format=tar.gz -o $archive $Branch }
     Invoke-Native "Uploading to $($settings.VmHost)" { scp -i $keyFile $archive "${target}:~/taskly.tar.gz" }
-    # The "web" network is shared with Caddy and the other apps; it's created if missing,
-    # since compose won't start without it. --remove-orphans deletes containers of services
-    # no longer in docker-compose.yml. The prune, in the same ssh call so there's no second
-    # passphrase prompt, removes only untagged images nothing uses: the one this build replaced.
-    Invoke-Native "Rebuilding and restarting on the VM, then removing the old image" {
-        ssh -i $keyFile $target "mkdir -p ~/taskly && cd ~/taskly && tar -xzf ~/taskly.tar.gz && rm ~/taskly.tar.gz && (docker network inspect web >/dev/null 2>&1 || docker network create web) && docker compose up -d --build --remove-orphans && docker image prune -f"
+    # One ssh call (one passphrase prompt), stopping at the first failure:
+    # - the "web" network is shared with Caddy and the other apps; created if missing,
+    #   since compose won't start without it;
+    # - build while the old app keeps serving;
+    # - backup and migrate run in throwaway containers of the new image, with no network
+    #   (a compose one-off container would join "web" as "taskly" and could get Caddy's traffic);
+    # - up replaces the app; --remove-orphans deletes containers of services no longer in
+    #   docker-compose.yml; the prune removes only untagged images nothing uses: the one replaced.
+    $steps = @(
+        "mkdir -p ~/taskly", "cd ~/taskly",
+        "tar -xzf ~/taskly.tar.gz", "rm ~/taskly.tar.gz",
+        "(docker network inspect web >/dev/null 2>&1 || docker network create web)",
+        "docker compose build",
+        "docker run --rm --network none -v ~/taskly/data:/data taskly-app python -m taskly.backup",
+        "docker run --rm --network none -v ~/taskly/data:/data taskly-app python -m taskly.migrate",
+        "docker compose up -d --remove-orphans",
+        "docker image prune -f"
+    ) -join " && "
+    Invoke-Native "Building, backing up, migrating and restarting on the VM" {
+        ssh -i $keyFile $target $steps
     }
 }
 finally {
