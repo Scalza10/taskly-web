@@ -174,6 +174,8 @@ An unowned legacy list is claimed by the first user created with
   an active user, or answers **401**. Every `/api` route uses it except
   `/api/login`. `/health` and the static page are public: the page holds no data
   and must load offline.
+- Every `/api` answer carries `Cache-Control: no-store`: private data never sits
+  in the browser's HTTP cache.
 - **Login throttling**, in memory: 10 failed attempts per username and 30 per
   client IP per 15 minutes, then **429** with `Retry-After`. The client IP is
   `request.client.host`, which is the real visitor because uvicorn trusts
@@ -190,9 +192,9 @@ An unowned legacy list is claimed by the first user created with
 | Method and path | Body | Answer |
 |---|---|---|
 | `POST /api/login` | `{username, password}` | 204 and the cookie; 401 if wrong; 429 if throttled |
-| `POST /api/logout` | | 204; deletes this session, clears the cookie. From phase 3 also `Clear-Site-Data: "cache", "storage"` |
+| `POST /api/logout` | | 204; deletes this session, clears the cookie. From phase 3 also `Clear-Site-Data: "storage"` (API answers are `no-store`, so there is no HTTP cache to clear, and `"cache"` can stall Chrome) |
 | `GET /api/me` | | `{username}`, or 401 |
-| `POST /api/me/password` | `{current, new}` | 204; 401 if `current` is wrong; 422 if `new` is too short. Deletes every other session of this user |
+| `POST /api/me/password` | `{current, new}` | 204; 403 if `current` is wrong (not 401, which the page reads as "logged out"; it counts toward the login throttle); 422 if `new` is too short. Deletes every other session of this user |
 
 Changing your password is how you sign out a lost device yourself.
 
@@ -270,7 +272,8 @@ task between lists is not supported.
 Users appear by username, never by internal id (`null` for legacy tasks with no
 author). This is the only read endpoint for lists and tasks: there is no
 separate `GET /api/lists`, since the page never needs lists without their tasks. Lists are sorted by name; tasks open first, then newest first
-(`created_at DESC, id`). The phase 2 page already reads from this endpoint, so
+(`created_at DESC, rowid DESC`, so ties within a second keep insertion order).
+Tasks also carry their `list_id`. The phase 2 page already reads from this endpoint, so
 phase 3 only adds storing it. `/api/todos` is removed in phase 2.
 
 ## Frontend
@@ -405,16 +408,22 @@ changes to run these on the VM, in one `ssh` call, stopping at the first
 failure:
 
 1. **Build:** `docker compose build`. The old app keeps serving.
-2. **Back up:** if the app container is running, SQLite's backup API inside it
-   writes `/data/backups/taskly-<UTC timestamp>.db`; the newest 10 are kept.
-3. **Migrate:** `docker compose run --rm --no-deps app python -m taskly.migrate`
-   with the new image. It applies pending migrations and prints the version
+2. **Back up:** `python -m taskly.backup` in a throwaway container of the new
+   image uses SQLite's backup API to write `/data/backups/taskly-<UTC timestamp>.db`
+   (safe while the old app runs); the newest 10 are kept. No database yet: it
+   skips.
+3. **Migrate:** `python -m taskly.migrate`, the same way. It applies pending migrations and prints the version
    change (e.g. `schema 2 -> 3`, or `schema 3, nothing to do`). If it fails,
    the deploy stops: the old app keeps running and the database stays at its
    previous version, since each migration is one transaction.
 4. **Start:** `docker compose up -d --remove-orphans`, then prune the replaced
    image, as today. The new app's startup migration finds nothing to do.
 5. **Health check**, as today.
+
+Both throwaway containers are `docker run --rm --network none -v ~/taskly/data:/data taskly-app …`
+(compose names the image `taskly-app`). Not `docker compose run`: a compose
+one-off container joins the `web` network with the alias `taskly`, and Caddy
+could send visitors to it.
 
 `taskly/migrate.py` is a small entry point around `db.migrate(Settings().db_path)`.
 Startup keeps migrating too, so local runs and tests are unchanged.
