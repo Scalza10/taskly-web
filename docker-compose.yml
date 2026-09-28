@@ -1,0 +1,30 @@
+# Runs on the shared VM next to Reels, in its own folder (~/taskly). Caddy, in
+# ~/proxy, serves the site over HTTPS and reaches this app over the "web"
+# network as taskly:8000. Deploying here never restarts Caddy or Reels.
+name: taskly
+
+services:
+  app:
+    build: .
+    ports:
+      # Only for curl on the VM and local runs. 8000 on the VM is Reels.
+      - "127.0.0.1:8001:8000"
+    env_file:
+      - path: .env
+        required: false     # no settings need one yet
+    environment:
+      DB_PATH: /data/taskly.db
+    volumes:
+      # The SQLite file. Anything written elsewhere in the container is lost on the next deploy.
+      - ./data:/data
+    networks:
+      web:
+        # The name ~/proxy/Caddyfile uses. Must be unique on the VM's "web" network.
+        aliases: [taskly]
+    restart: unless-stopped
+
+networks:
+  # Shared with Caddy and the other apps. deploy.ps1 creates it if missing;
+  # locally, create it once: docker network create web
+  web:
+    external: true

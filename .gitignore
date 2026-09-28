@@ -1,0 +1,21 @@
+# Python
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Local settings and data
+.env
+data/
+*.db
+*.db-wal
+*.db-shm
+
+# The VM's address and key path. Shared by hand, never committed (see README, Deploy).
+scripts/deploy.local.psd1
+
+# Editors and OS
+.vscode/
+.idea/
+Thumbs.db
+.DS_Store
