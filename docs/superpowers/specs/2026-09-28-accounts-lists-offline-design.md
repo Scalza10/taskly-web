@@ -388,13 +388,45 @@ install it.
 
 ## Deploying
 
-### Backups
+### Changing the schema later
 
-From phase 1a, `deploy.ps1` backs up the database before rebuilding: if the
-container is running, it uses SQLite's backup API inside it to write
-`/data/backups/taskly-<timestamp>.db`, and keeps the newest 10. This touches
-only `~/taskly`. It matters because migration 3 drops `todos`: running older
-code again means restoring the backup taken before that deploy.
+Migrations 2 and 3 can be edited freely until they are deployed. Once one has
+run on the VM it is frozen: the database records its version and never runs it
+again. Later changes are new migrations appended to `MIGRATIONS` (add a column
+or table; for what SQLite can't alter in place, create a new table, copy, drop
+the old one, as migration 3 does). Data a migration drops is gone, hence the
+backups.
+
+### Deploy steps (from phase 1a)
+
+Today `docker compose up -d --build` stops the old container before the new one
+migrates on startup, so a failing migration leaves the site down. `deploy.ps1`
+changes to run these on the VM, in one `ssh` call, stopping at the first
+failure:
+
+1. **Build:** `docker compose build`. The old app keeps serving.
+2. **Back up:** if the app container is running, SQLite's backup API inside it
+   writes `/data/backups/taskly-<UTC timestamp>.db`; the newest 10 are kept.
+3. **Migrate:** `docker compose run --rm --no-deps app python -m taskly.migrate`
+   with the new image. It applies pending migrations and prints the version
+   change (e.g. `schema 2 -> 3`, or `schema 3, nothing to do`). If it fails,
+   the deploy stops: the old app keeps running and the database stays at its
+   previous version, since each migration is one transaction.
+4. **Start:** `docker compose up -d --remove-orphans`, then prune the replaced
+   image, as today. The new app's startup migration finds nothing to do.
+5. **Health check**, as today.
+
+`taskly/migrate.py` is a small entry point around `db.migrate(Settings().db_path)`.
+Startup keeps migrating too, so local runs and tests are unchanged.
+
+Between steps 3 and 4 the old code runs briefly against the new schema. That is
+harmless for migration 2 (added nullable columns). For migration 3 the old code
+can't find `todos` for the few seconds until the new app is up; a request in
+that window errors and a reload fixes it. Accepted for this app.
+
+All of this touches only `~/taskly`. The backups matter because migration 3
+drops `todos`: running older code again means restoring the backup taken before
+that deploy.
 
 Older code on a newer database: `migrate` runs `MIGRATIONS[user_version:]`, so
 old code skips the migrations it doesn't know. After migration 2 the old code
@@ -428,6 +460,8 @@ Phases 2 and 3 are ordinary deploys.
     non-member, logged out.
   - Retry-safety of `POST /api/tasks`; `/api/sync` shape and ordering.
   - The admin command's subcommands, including ownership transfer on disable.
+  - `python -m taskly.migrate`: applies pending migrations and reports the
+    version change; a second run reports nothing to do.
   - The page test uses a small stand-in static directory, not a build.
 - **Vitest:** `applyQueue`; each sync outcome (2xx; 404/409/422; 401;
   network error; 429/5xx) with a fake `fetch` and an in-memory store;
@@ -441,8 +475,9 @@ Phases 2 and 3 are ordinary deploys.
 Each phase is deployed and usable on its own.
 
 1. **React and accounts.**
-   - 1a: React + TS port with the same behaviour; Docker Node stage; backups in
-     `deploy.ps1`. README and CLAUDE.md: new commands and frontend rules.
+   - 1a: React + TS port with the same behaviour; Docker Node stage;
+     `deploy.ps1` builds, backs up, migrates, then starts (see "Deploy steps").
+     README and CLAUDE.md: new commands, frontend rules, deploy steps.
    - 1b: migration 2, accounts, sessions, throttling, Origin check, admin
      command, login screen, account menu, attribution on todos. README: an
      "Accounts" section; the Caddy section loses its password how-to;
@@ -466,6 +501,7 @@ page listing your devices (changing your password signs the others out).
 - iPhone quirks with installed web apps: tested on a real phone in phase 3.
 - Login throttling is per process: if the app ever runs more than one uvicorn
   worker, the counters move into the database.
-- Migrations can't be undone: covered by the automatic pre-deploy backups.
+- Migrations can't be undone: covered by the automatic pre-deploy backups, and
+  a failing migration stops the deploy before the old app is replaced.
 - A new npm toolchain: `package-lock.json` is committed and the Docker build
   uses `npm ci`, so builds are reproducible.
