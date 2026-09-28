@@ -6,16 +6,21 @@ Caddy, on its own host name.
 
 ## Run it locally
 
-**With Python** (3.12; on Windows use `.venv\Scripts\python.exe` for `python`):
+**With Python** (3.12), from the repo folder. Windows (PowerShell):
 
-```bash
-python -m venv .venv
-.venv/bin/pip install -r requirements-dev.txt      # Windows: .venv\Scripts\pip.exe
-python -m uvicorn taskly.main:create_app --factory --reload
+```powershell
+python -m venv .venv                                  # once
+.venv\Scripts\pip.exe install -r requirements-dev.txt # once, and when requirements change
+.venv\Scripts\python.exe -m uvicorn taskly.main:create_app --factory --reload
 ```
 
-Open <http://localhost:8000/>. The database is created at `./data/taskly.db`
-(change it with `DB_PATH` in `.env`, from `.env.example`).
+macOS or Linux: the same with `.venv/bin/pip` and `.venv/bin/python`.
+
+Open <http://localhost:8000/>. `--reload` restarts the server when you save a
+Python file; for changes in `static/`, just refresh the page. Stop it with
+Ctrl+C. The database is created at `./data/taskly.db` and survives restarts;
+delete the file to start empty. No `.env` is needed; copy `.env.example` to
+`.env` only to put the database somewhere else (`DB_PATH`).
 
 **With Docker** (the same container as on the VM):
 
@@ -27,7 +32,9 @@ docker compose up -d --build
 Open <http://localhost:8001/>. The database is `./data/taskly.db` on your
 machine, mounted into the container.
 
-**Tests:** `python -m pytest` (a few seconds; each test gets its own database).
+**Tests:** `.venv\Scripts\python.exe -m pytest` (`.venv/bin/python` on macOS
+or Linux; under a second, and each test gets its own database, so your local
+data is untouched).
 
 ## API
 
