@@ -44,6 +44,14 @@ def migrate(path: str) -> int:
         return conn.execute("PRAGMA user_version").fetchone()[0]
 
 
+def current_version(path: str) -> int:
+    """The schema version of the file, 0 if there is no file yet. Never creates it."""
+    if not Path(path).exists():
+        return 0
+    with closing(connect(path)) as conn:
+        return conn.execute("PRAGMA user_version").fetchone()[0]
+
+
 def session(path: str) -> Iterator[sqlite3.Connection]:
     """A connection per request (a FastAPI dependency via routes.get_db)."""
     with closing(connect(path)) as conn:
