@@ -142,14 +142,10 @@ before you deploy**, so you don't roll back the other person's changes.
 2. **Deploy** with `.\scripts\deploy.ps1`. The health check at the end fails
    this first time because Caddy doesn't know the site yet. Check the app itself
    on the VM with `curl localhost:8001/health`.
-3. **A password.** The app has no login of its own, so Caddy asks for one.
-   Make its hash on the VM:
-
-   ```bash
-   cd ~/proxy && docker compose exec caddy caddy hash-password --plaintext '<the password>'
-   ```
-
-4. **Add the site** to `~/proxy/Caddyfile`, with that hash:
+3. **Add the site to Caddy, with a password.** The app has no login of its
+   own, so Caddy asks for one. Follow [Changing the password](#changing-the-password)
+   to make a hash, then add this block to `~/proxy/Caddyfile` and apply it as in
+   [Editing the Caddyfile](#editing-the-caddyfile):
 
    ```
    <site> {
@@ -161,10 +157,9 @@ before you deploy**, so you don't roll back the other person's changes.
    }
    ```
 
-   `/health` stays open so the deploy script can check it. Apply it with
-   `docker compose exec caddy caddy reload` (in `~/proxy`). Reels isn't
-   interrupted, and Caddy gets the certificate by itself within a minute.
-5. Open `https://<site>/` and log in as `taskly` with the password.
+   `/health` stays open so the deploy script can check it. Caddy gets the
+   certificate by itself within a minute.
+4. Open `https://<site>/` and log in as `taskly` with the password.
 
 ### On the VM
 
@@ -177,3 +172,111 @@ command in `~/reels` acts on Reels instead.
 | Restart | `docker compose restart app` |
 | Check the app without Caddy | `curl localhost:8001/health` |
 | See Caddy's logs | `cd ~/proxy && docker compose logs -f caddy` |
+| Change a setting | Edit `~/taskly/.env`, then `docker compose up -d` (a restart doesn't re-read it) |
+
+## Caddy: the address and the password
+
+Caddy runs in `~/proxy` and is **shared with Reels**: one Caddyfile, one
+container, every site. A mistake there can affect Reels too, so always
+validate before reloading. A reload that fails changes nothing: Caddy keeps
+running the config it had, and both sites stay up.
+
+### Editing the Caddyfile
+
+Every command runs in `~/proxy`. Caddy is not installed on the VM itself, only
+inside the container, so each `caddy` command goes through Docker.
+
+1. Edit with `nano Caddyfile`. Nano writes the file in place. Editors that
+   write a new file instead leave the container seeing the old one; if an edit
+   seems ignored, `docker compose exec caddy grep -n <site> /etc/caddy/Caddyfile`
+   shows what Caddy sees, and `docker compose up -d --force-recreate caddy`
+   picks up the new file (Reels drops for a second or two).
+2. Check it, then apply it:
+
+   ```bash
+   docker compose exec -w /etc/caddy caddy caddy validate    # ends with "Valid configuration"
+   docker compose exec -w /etc/caddy caddy caddy reload      # no downtime for either site
+   docker compose logs --tail 30 caddy                       # certificates, errors
+   ```
+
+   The `-w /etc/caddy` matters: without it Caddy looks in the wrong folder and
+   answers "no config file to load".
+3. Optional: tidy the indentation. A reload warns "Caddyfile input is not
+   formatted" when it's uneven, which is harmless. The container can only read
+   the file, so format it with a throwaway container, then reload:
+
+   ```bash
+   docker run --rm -v ~/proxy/Caddyfile:/etc/caddy/Caddyfile caddy:2 caddy fmt --overwrite /etc/caddy/Caddyfile
+   ```
+
+### Changing the password
+
+The Caddyfile holds a **hash** of the password, never the password itself.
+
+1. Make the hash (keep the single quotes, so `!` or `$` in the password
+   arrive as typed):
+
+   ```bash
+   docker compose exec caddy caddy hash-password --plaintext 'purple-lamp-river'
+   ```
+
+2. It prints one line starting with `$2a$14$`, about 60 characters. Paste the
+   whole line **with nano** in place of the old hash, after the user name:
+
+   ```
+   basic_auth @protected {
+       taskly $2a$14$...
+   }
+   ```
+
+   Don't paste it through `sed` or `echo "..."`: in double quotes the shell
+   reads `$2`, `$14` and so on as variables and silently cuts them out.
+3. Validate and reload as above. Everyone has to log in again with the new one.
+
+Easy to type is fine, but not a single word or `1234`: the site is public and
+Caddy doesn't limit login attempts. Three random words work well on a phone.
+
+### Adding or removing a login
+
+Each line in the `basic_auth` block is one user name and its hash. To give
+someone their own login (so it can be taken away without changing everyone's
+password), add a line with a new name and a hash made as above:
+
+```
+basic_auth @protected {
+    taskly $2a$14$...
+    maria  $2a$14$...
+}
+```
+
+To remove one, delete its line. Validate and reload either way.
+
+### Changing the address
+
+1. Create the new DuckDNS subdomain, pointing at the same IP, and check it
+   with `nslookup <new site>`.
+2. Replace the site name on the block's first line in the Caddyfile. Validate
+   and reload. Caddy gets the new certificate by itself.
+3. Change `Site` in every developer's `scripts\deploy.local.psd1`, or the
+   deploy's health check waits on the old address.
+
+### Removing the password
+
+Only once the app has a login of its own: remove the `@protected` line and
+the `basic_auth` block, leaving `reverse_proxy taskly:8000`. Validate and
+reload.
+
+### When something goes wrong
+
+| What you see | Why | Fix |
+|---|---|---|
+| `Error: no config file to load` on reload | `-w /etc/caddy` is missing | Use the commands in [Editing the Caddyfile](#editing-the-caddyfile) |
+| `base64-decoding password: illegal base64 data at input byte 1` | The value after the user name isn't a hash: a plain password, or a hash cut short or mangled by the shell | [Changing the password](#changing-the-password); paste with nano |
+| `WARN Caddyfile input is not formatted` | Uneven indentation | Harmless. Format it (step 3 above) if you like |
+| `caddy: command not found` | Caddy exists only inside the container | Prefix with `docker compose exec -w /etc/caddy caddy` |
+| Browser: `ERR_CONNECTION_CLOSED` | Caddy has no block for that name: the reload didn't happen or failed, or the name is misspelled | Validate, reload, check the logs |
+| An edit seems ignored | The editor replaced the file and the container still sees the old one | `docker compose up -d --force-recreate caddy` |
+| Browser: 502 | Caddy is fine but can't reach the app | `curl localhost:8001/health` on the VM; `docker network inspect web` should list `taskly-app-1` |
+| Certificate errors in the logs | DNS doesn't point at the VM yet | `nslookup <site>`; fix the IP in DuckDNS, Caddy retries by itself |
+| The deploy's health check fails but `curl localhost:8001/health` works | Caddy's side: a missing or wrong block, or `Site` in `deploy.local.psd1` doesn't match it | Compare the two names |
+

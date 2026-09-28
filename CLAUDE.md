@@ -38,11 +38,20 @@ The VM runs one Caddy (`~/proxy`, owns 80/443) and several apps, each its own Co
 - **Data lives only in `./data` (mounted at `/data`).** Anything written elsewhere in the container is lost on the next deploy.
 - **The VM's IP and host name are never committed.** `deploy.ps1` reads them from `scripts/deploy.local.psd1` (gitignored; template `deploy.local.example.psd1`), handed over with the SSH key on a USB stick. Docs use `<site>` and `<vm-ip>`.
 - **`deploy.ps1` ships the last commit via `git archive`**, not the working tree. It sets TLS 1.2 explicitly because Windows PowerShell 5.1 doesn't offer it by default.
-- **The site is behind Caddy's `basic_auth`** (the app has no login), except `/health`, which the deploy script checks. If the app gets its own login, remove that from the Caddyfile block.
+- **The site is behind Caddy's `basic_auth`** (the app has no login), except `/health`, which the deploy script checks. If the app gets its own login, remove that from the Caddyfile block. README "Caddy: the address and the password" is the how-to for passwords, logins, the address and Caddy errors; keep it current when giving Caddy instructions.
 - **`/health` touches the database**, so a broken volume fails the deploy check instead of the first request.
 
 ## Things we learned
 
+### Caddy on the shared VM (found on the first deploy)
+- **`caddy` exists only inside the container.** Every Caddy command is `docker compose exec -w /etc/caddy caddy caddy <command>`, run in `~/proxy`. Without `-w /etc/caddy`, `reload` looks in the container's working directory `/srv` and fails with "no config file to load"; that is how the first reload silently never happened, and the browser showed `ERR_CONNECTION_CLOSED` (Caddy had no block for the name).
+- **Always `validate` before `reload`.** Caddy is shared with Reels. A failed reload is safe (Caddy keeps its running config), but a bad config that validates would hit both sites.
+- **`basic_auth` takes a bcrypt hash (`$2a$14$…`, ~60 chars), never the password.** A plain password or a truncated hash fails the reload with `base64-decoding password: illegal base64 data at input byte 1`. Make it with `caddy hash-password --plaintext '<pw>'` (single quotes).
+- **Never route a hash through `sed` or `echo "..."`**: in double quotes the shell expands `$2`, `$14`… and silently mangles it. Tell people to paste with `nano`.
+- **The Caddyfile is a read-only single-file bind mount.** `caddy fmt --overwrite` can't run in the service container; use `docker run --rm -v ~/proxy/Caddyfile:/etc/caddy/Caddyfile caddy:2 caddy fmt --overwrite /etc/caddy/Caddyfile`. An editor that replaces the file (new inode) leaves the container on the old copy until `docker compose up -d --force-recreate caddy`. `nano` writes in place. The "Caddyfile input is not formatted" warning is harmless.
+- **The real site name stays out of the repo** like the VM's IP: docs say `<site>`; it lives in `deploy.local.psd1` and `~/proxy/Caddyfile`.
+
+### App
 - **On Windows, `mimetypes` can map `.js` to `text/plain`** from the registry, and browsers then refuse the module script. `main.py` forces `text/javascript`; `test_page_and_its_files_are_served` guards it.
 - **`Settings` reads `.env` from the working directory.** Tests build settings with `tests/conftest.py::make_settings(tmp_path)`, which passes `_env_file=None`. Use it.
 - **`[hidden] { display: none !important; }`** in `style.css` keeps `el.hidden` working against author `display` rules.
