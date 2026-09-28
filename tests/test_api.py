@@ -1,6 +1,7 @@
 from fastapi.testclient import TestClient
 
 from taskly.main import create_app
+from conftest import make_settings
 
 
 def add(client, title="Buy milk"):
@@ -72,9 +73,22 @@ def test_todos_survive_a_restart(settings):
         assert [todo["title"] for todo in client.get("/api/todos").json()] == ["still here"]
 
 
-def test_page_and_its_files_are_served(client):
-    page = client.get("/")
-    assert page.status_code == 200
-    assert "<title>Taskly</title>" in page.text
-    assert client.get("/app.js").headers["content-type"].startswith("text/javascript")
-    assert client.get("/style.css").headers["content-type"].startswith("text/css")
+def test_page_and_its_files_are_served(tmp_path):
+    static = tmp_path / "static"
+    static.mkdir()
+    (static / "index.html").write_text("<!doctype html><title>Taskly</title>")
+    (static / "assets").mkdir()
+    (static / "assets" / "index-abc123.js").write_text("export {};")
+    (static / "assets" / "index-abc123.css").write_text("body {}")
+
+    with TestClient(create_app(make_settings(tmp_path, static_dir=str(static)))) as client:
+        page = client.get("/")
+        assert page.status_code == 200
+        assert "<title>Taskly</title>" in page.text
+        assert client.get("/assets/index-abc123.js").headers["content-type"].startswith("text/javascript")
+        assert client.get("/assets/index-abc123.css").headers["content-type"].startswith("text/css")
+
+
+def test_api_runs_without_a_built_page(client):
+    assert client.get("/health").json() == {"status": "ok"}
+    assert client.get("/").status_code == 404

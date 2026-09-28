@@ -6,8 +6,10 @@ from taskly.settings import Settings
 
 
 def make_settings(tmp_path, **overrides) -> Settings:
-    """Settings on a fresh database in tmp_path. _env_file=None keeps a local .env out of tests."""
-    return Settings(_env_file=None, db_path=str(tmp_path / "taskly.db"), **overrides)
+    """Settings on a fresh database in tmp_path. _env_file=None keeps a local .env out of tests.
+    static_dir points at tmp_path/static, which exists only if a test creates it."""
+    values = {"db_path": str(tmp_path / "taskly.db"), "static_dir": str(tmp_path / "static")}
+    return Settings(_env_file=None, **{**values, **overrides})
 
 
 @pytest.fixture

@@ -7,8 +7,6 @@ from fastapi.staticfiles import StaticFiles
 from . import db, routes
 from .settings import Settings
 
-STATIC_DIR = Path(__file__).parent / "static"
-
 # On Windows, mimetypes reads .js from the registry, which can say text/plain;
 # browsers then refuse to run the page's module script.
 mimetypes.add_type("text/javascript", ".js")
@@ -23,5 +21,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.settings = settings
     app.include_router(routes.router)
     # Last, so the API routes above win. html=True serves index.html at /.
-    app.mount("/", StaticFiles(directory=STATIC_DIR, html=True), name="static")
+    # No folder means no build yet (frontend/, npm run build): the API still works.
+    static = Path(settings.static_dir)
+    if static.is_dir():
+        app.mount("/", StaticFiles(directory=static, html=True), name="static")
     return app
