@@ -94,3 +94,13 @@ button.delete:hover { color: var(--danger); }
 
 .error { color: var(--danger); }
 .empty { color: var(--muted); text-align: center; margin-top: 32px; }
+
+/* The rename field replaces the title while editing. */
+input.title {
+  padding: 0;
+  border: 0;
+  border-bottom: 1px solid var(--accent);
+  background: none;
+  color: inherit;
+  font: inherit;
+}

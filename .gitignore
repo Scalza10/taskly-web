@@ -11,6 +11,10 @@ data/
 *.db-wal
 *.db-shm
 
+# The frontend's packages and its build (made by npm run build or the Docker build)
+frontend/node_modules/
+taskly/static/
+
 # The VM's address and key path. Shared by hand, never committed (see README, Deploy).
 scripts/deploy.local.psd1
 
