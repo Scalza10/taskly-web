@@ -30,8 +30,29 @@ def settings(tmp_path):
 
 
 @pytest.fixture
-def client(settings):
-    with TestClient(create_app(settings)) as client:
+def app(settings):
+    return create_app(settings)
+
+
+def login(client, username, password=PASSWORD):
+    response = client.post("/api/login", json={"username": username, "password": password})
+    assert response.status_code == 204, response.text
+    return response
+
+
+@pytest.fixture
+def anon(app):
+    """A browser that hasn't logged in."""
+    with TestClient(app) as client:
+        yield client
+
+
+@pytest.fixture
+def client(app, settings):
+    """A browser logged in as maria."""
+    add_user(settings, "maria")
+    with TestClient(app) as client:
+        login(client, "maria")
         yield client
 
 

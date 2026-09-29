@@ -1,7 +1,7 @@
 from fastapi.testclient import TestClient
 
 from taskly.main import create_app
-from conftest import make_settings
+from conftest import add_user, login, make_settings
 
 
 def add(client, title="Buy milk"):
@@ -67,9 +67,12 @@ def test_delete(client):
 
 
 def test_todos_survive_a_restart(settings):
+    add_user(settings, "maria")
     with TestClient(create_app(settings)) as client:
+        login(client, "maria")
         add(client, "still here")
     with TestClient(create_app(settings)) as client:
+        login(client, "maria")
         assert [todo["title"] for todo in client.get("/api/todos").json()] == ["still here"]
 
 

@@ -4,7 +4,7 @@ from pathlib import Path
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
-from . import db, routes
+from . import auth, db, routes
 from .settings import Settings
 
 # On Windows, mimetypes reads .js from the registry, which can say text/plain;
@@ -19,6 +19,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     app = FastAPI(title="Taskly")
     app.state.settings = settings
+    auth.install(app)
     app.include_router(routes.router)
     @app.middleware("http")
     async def revalidate_the_page(request, call_next):

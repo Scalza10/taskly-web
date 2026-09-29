@@ -74,6 +74,6 @@ def current_version(path: str) -> int:
 
 
 def session(path: str) -> Iterator[sqlite3.Connection]:
-    """A connection per request (a FastAPI dependency via routes.get_db)."""
+    """A connection per request (a FastAPI dependency via deps.get_db)."""
     with closing(connect(path)) as conn:
         yield conn
