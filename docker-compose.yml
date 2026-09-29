@@ -6,6 +6,8 @@ name: taskly
 services:
   app:
     build: .
+    # deploy.ps1 runs backups and migrations in throwaway containers of this image.
+    image: taskly-app
     ports:
       # Only for curl on the VM and local runs. 8000 on the VM is Reels.
       - "127.0.0.1:8001:8000"
