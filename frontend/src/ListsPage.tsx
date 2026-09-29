@@ -69,7 +69,7 @@ export function ListsPage({ onLoggedOut }: { onLoggedOut: () => void }) {
       />
       {panel === "new" && <NewList change={change} onCreated={choose} onCancel={() => setPanel("none")} />}
       {panel === "settings" && current && (
-        <ListSettings list={current} me={snapshot.me} change={change} onClose={() => setPanel("none")} />
+        <ListSettings key={current.id} list={current} me={snapshot.me} change={change} onClose={() => setPanel("none")} />
       )}
       {error && <p className="error" role="alert">{error}</p>}
       {current ? (

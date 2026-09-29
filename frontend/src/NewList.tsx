@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from "react";
-import { api, type TaskList } from "./api";
+import { api, type ListInfo } from "./api";
 import type { Change } from "./ListsPage";
 
 export function NewList({ change, onCreated, onCancel }: { change: Change; onCreated: (id: string) => void; onCancel: () => void }) {
@@ -9,7 +9,7 @@ export function NewList({ change, onCreated, onCancel }: { change: Change; onCre
     event.preventDefault();
     const trimmed = name.trim();
     if (!trimmed) return;
-    const created = await change(() => api<TaskList>("POST", "/api/lists", { name: trimmed }));
+    const created = await change(() => api<ListInfo>("POST", "/api/lists", { name: trimmed }));
     if (created) onCreated(created.id);
   }
 

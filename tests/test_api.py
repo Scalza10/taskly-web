@@ -201,3 +201,54 @@ def test_api_docs_are_off_unless_asked_for(client, tmp_path):
     with TestClient(create_app(make_settings(tmp_path / "local", api_docs=True))) as local:
         assert local.get("/docs").status_code == 200
         assert local.get("/openapi.json").status_code == 200
+
+
+def vanish_after_role_check(monkeypatch, conn, list_id):
+    """Delete the list right after the route's role check passes: another device won the race."""
+    from taskly import lists, routes
+
+    real = routes.require_role
+
+    def check_then_delete(*args, **kwargs):
+        role = real(*args, **kwargs)
+        lists.delete_list(conn, list_id)
+        return role
+
+    monkeypatch.setattr(routes, "require_role", check_then_delete)
+
+
+def test_a_task_deleted_mid_update_is_a_404(client, conn, monkeypatch):
+    from taskly import tasks
+
+    task = new_task(client, new_list(client)["id"])
+    real = tasks.update_task
+
+    def delete_then_update(*args, **kwargs):
+        tasks.delete_task(conn, task["id"])
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(tasks, "update_task", delete_then_update)
+    response = client.patch(f"/api/tasks/{task['id']}", json={"done": True})
+    assert (response.status_code, response.json()["detail"]) == (404, "No such task")
+
+
+def test_a_list_deleted_mid_create_is_a_404(client, conn, monkeypatch):
+    list_id = new_list(client)["id"]
+    vanish_after_role_check(monkeypatch, conn, list_id)
+    response = client.post("/api/tasks", json={"id": str(uuid.uuid4()), "list_id": list_id, "title": "Milk"})
+    assert (response.status_code, response.json()["detail"]) == (404, "No such list")
+
+
+def test_a_list_deleted_mid_rename_is_a_404(client, conn, monkeypatch):
+    list_id = new_list(client)["id"]
+    vanish_after_role_check(monkeypatch, conn, list_id)
+    response = client.patch(f"/api/lists/{list_id}", json={"name": "Other"})
+    assert (response.status_code, response.json()["detail"]) == (404, "No such list")
+
+
+def test_a_list_deleted_mid_add_member_is_a_404(client, conn, settings, monkeypatch):
+    add_user(settings, "joao")
+    list_id = new_list(client)["id"]
+    vanish_after_role_check(monkeypatch, conn, list_id)
+    response = client.post(f"/api/lists/{list_id}/members", json={"username": "joao"})
+    assert (response.status_code, response.json()["detail"]) == (404, "No such list")

@@ -1,6 +1,6 @@
 // Owners rename, add and remove people, and delete. Members see who's in and can leave.
 import { useState, type FormEvent } from "react";
-import { api, type TaskList } from "./api";
+import { api, type ListInfo, type TaskList } from "./api";
 import type { Change } from "./ListsPage";
 
 type Props = { list: TaskList; me: string; change: Change; onClose: () => void };
@@ -16,14 +16,14 @@ export function ListSettings({ list, me, change, onClose }: Props) {
   function rename(event: FormEvent) {
     event.preventDefault();
     const trimmed = name.trim();
-    if (trimmed && trimmed !== list.name) void change(() => api("PATCH", base, { name: trimmed }));
+    if (trimmed && trimmed !== list.name) void change(() => api<ListInfo>("PATCH", base, { name: trimmed }));
   }
 
   async function add(event: FormEvent) {
     event.preventDefault();
     const username = newMember.trim();
     if (!username) return;
-    if ((await change(() => api("POST", `${base}/members`, { username }))) !== undefined) setNewMember("");
+    if ((await change(() => api<ListInfo>("POST", `${base}/members`, { username }))) !== undefined) setNewMember("");
   }
 
   async function deleteOrLeave() {
@@ -66,7 +66,7 @@ export function ListSettings({ list, me, change, onClose }: Props) {
 
       {confirming ? (
         <div className="row confirm">
-          <span>{owner ? `Delete “${list.name}” and its ${list.tasks.length} tasks?` : `Leave “${list.name}”?`}</span>
+          <span>{owner ? `Delete “${list.name}” and its ${list.tasks.length} ${list.tasks.length === 1 ? "task" : "tasks"}?` : `Leave “${list.name}”?`}</span>
           <button type="button" className="danger" onClick={deleteOrLeave}>{owner ? "Delete" : "Leave"}</button>
           <button type="button" className="plain" onClick={() => setConfirming(false)}>Cancel</button>
         </div>

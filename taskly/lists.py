@@ -26,9 +26,10 @@ def create_list(conn: sqlite3.Connection, name: str, owner_id: int) -> str:
     return list_id
 
 
-def rename_list(conn: sqlite3.Connection, list_id: str, name: str) -> None:
+def rename_list(conn: sqlite3.Connection, list_id: str, name: str) -> bool:
     with conn:
-        conn.execute(f"UPDATE lists SET name = ?, updated_at = {NOW} WHERE id = ?", (name, list_id))
+        cursor = conn.execute(f"UPDATE lists SET name = ?, updated_at = {NOW} WHERE id = ?", (name, list_id))
+    return cursor.rowcount == 1
 
 
 def delete_list(conn: sqlite3.Connection, list_id: str) -> None:

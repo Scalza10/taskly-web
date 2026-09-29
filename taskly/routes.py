@@ -3,6 +3,7 @@
 Every list or task action first asks the user's role in the list: none is a 404 (as if it
 didn't exist, so ids can't be probed), a member doing an owner's action is a 403."""
 
+import sqlite3
 from typing import Annotated
 from uuid import UUID
 
@@ -75,7 +76,8 @@ def create_list(body: ListBody, user: CurrentUser, conn: Conn) -> dict:
 @router.patch("/api/lists/{list_id}")
 def rename_list(list_id: UUID, body: ListBody, user: CurrentUser, conn: Conn) -> dict:
     require_role(conn, str(list_id), user, owner=True)
-    lists.rename_list(conn, str(list_id), body.name)
+    if not lists.rename_list(conn, str(list_id), body.name):  # deleted since the role check
+        raise HTTPException(status_code=404, detail="No such list")
     return snapshot.list_view(conn, str(list_id), user["id"])
 
 
@@ -93,7 +95,11 @@ def add_member(list_id: UUID, body: MemberBody, response: Response, user: Curren
     member = users.find_user(conn, name) if users.USERNAME.fullmatch(name) else None
     if member is None or member["disabled_at"]:
         raise HTTPException(status_code=404, detail="No such user")
-    response.status_code = 201 if lists.add_member(conn, str(list_id), member["id"]) else 200
+    try:
+        added = lists.add_member(conn, str(list_id), member["id"])
+    except sqlite3.IntegrityError:  # the list was deleted since the role check
+        raise HTTPException(status_code=404, detail="No such list") from None
+    response.status_code = 201 if added else 200
     return snapshot.list_view(conn, str(list_id), user["id"])
 
 
@@ -114,7 +120,10 @@ def remove_member(list_id: UUID, username: str, user: CurrentUser, conn: Conn) -
 @router.post("/api/tasks")
 def create_task(body: TaskCreate, response: Response, user: CurrentUser, conn: Conn) -> dict:
     require_role(conn, str(body.list_id), user)
-    task, created = tasks.create_task(conn, str(body.id), str(body.list_id), body.title, user["id"])
+    try:
+        task, created = tasks.create_task(conn, str(body.id), str(body.list_id), body.title, user["id"])
+    except sqlite3.IntegrityError:  # the list was deleted since the role check
+        raise HTTPException(status_code=404, detail="No such list") from None
     if task["list_id"] != str(body.list_id):
         raise HTTPException(status_code=409, detail="That task id is already used")
     # 200 for a retry: the device sent this create before but never got the answer.
@@ -125,7 +134,10 @@ def create_task(body: TaskCreate, response: Response, user: CurrentUser, conn: C
 @router.patch("/api/tasks/{task_id}")
 def update_task(task_id: UUID, body: TaskUpdate, user: CurrentUser, conn: Conn) -> dict:
     task_for(conn, task_id, user)
-    return tasks.update_task(conn, str(task_id), user["id"], title=body.title, done=body.done)
+    task = tasks.update_task(conn, str(task_id), user["id"], title=body.title, done=body.done)
+    if task is None:  # deleted since task_for
+        raise HTTPException(status_code=404, detail="No such task")
+    return task
 
 
 @router.delete("/api/tasks/{task_id}", status_code=204)
