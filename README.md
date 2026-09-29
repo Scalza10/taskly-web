@@ -31,6 +31,12 @@ To see the page exactly as deployed, build it (`npm --prefix frontend run build`
 into `taskly/static/`) and open uvicorn's own <http://localhost:8000/>. Without a
 build, port 8000 has only the API.
 
+The service worker (offline and install) only runs on the build: use
+`npm --prefix frontend run build` and uvicorn's <http://localhost:8000/> to try
+them, with DevTools → Network → Offline. Opening the dev server from a phone on
+your network (`http://<pc-ip>:5173`) doesn't work: adding tasks needs
+`crypto.randomUUID()`, which browsers only offer on https or localhost.
+
 The database is created at `./data/taskly.db` and survives restarts; delete the
 file to start empty. No `.env` is needed; copy `.env.example` to `.env` only to
 put the database somewhere else (`DB_PATH`).
@@ -56,7 +62,7 @@ each test gets its own database, so your local data is untouched) and
 |---|---|---|
 | `GET /health` | | `{"status": "ok"}`; also checks the database |
 | `POST /api/login` | `{"username", "password"}` | 204 and the session cookie; 401 if wrong; 429 after too many tries |
-| `POST /api/logout` | | 204; ends this device's session |
+| `POST /api/logout` | | 204; ends this device's session and tells the browser to clear the site's saved data (`Clear-Site-Data: "storage"`) |
 | `GET /api/me` | | `{"username"}` |
 | `POST /api/me/password` | `{"current", "new"}` | 204; logs out your other devices. 403 if `current` is wrong, 422 if `new` is under 10 characters |
 | `GET /api/sync` | | Everything you can see: `{"me", "lists": [{"id", "name", "owner", "role", "members", "tasks": [...]}]}`, lists by name, tasks open first then newest |
@@ -120,6 +126,31 @@ logins wait up to 15 minutes.
 **Locally:** create yourself an account once with
 `.venv\Scripts\python.exe -m taskly.admin add-user me`, then log in on the page.
 
+## On your phone
+
+Open `https://<site>/`, log in, then install it:
+
+- **iPhone (Safari):** Share → **Add to Home Screen**. Do this: Safari deletes a
+  website's saved data after 7 days without a visit, but not an installed app's,
+  and unsent changes live there.
+- **Android (Chrome):** menu → **Install app** (or "Add to Home screen").
+- **Laptop (Chrome or Edge):** the install icon at the end of the address bar.
+
+**Offline** you can see your lists and add, tick, rename and delete tasks. The
+line at the bottom says how many changes are waiting; they're sent when you're
+back online and the app is open (it doesn't sync in the background). Creating
+lists, settings and logging out need a connection. If someone deleted a task you
+changed offline, your change is dropped and the app says so.
+
+**Logging out** removes everything Taskly saved on the device. If changes
+haven't synced yet, it asks first. Someone else logging in on the same device
+never sees or sends your unsent changes.
+
+**Checking a new version on a phone:** after a deploy, close and reopen the app
+(it updates on open). Then: go offline (airplane mode), tick a task, add one,
+reopen the app (still there, "2 changes waiting"), go online, and check another
+device shows the changes.
+
 ## Layout
 
 ```
@@ -141,13 +172,15 @@ taskly/
   migrate.py    python -m taskly.migrate: apply pending migrations
   static/       the built page (not in git)
 frontend/
-  src/          the page: React + TypeScript (api.ts talks to the API)
+  src/          the page: React + TypeScript (api.ts calls the API; sync.ts sends the queued task changes and downloads /api/sync)
+    store.ts, view.ts, sync.ts, device.ts, useLocal.ts, StatusLine.tsx   the device's copy (IndexedDB) and its queue of unsent changes, what the screen shows, syncing, the page's one store and sync, the hook that triggers syncs, the "N changes waiting" line
     Login.tsx, AccountBar.tsx, ChangePassword.tsx   the login screen, the bar with your name, the password form
     ListsPage.tsx, ListPicker.tsx, NewList.tsx, ListSettings.tsx   the lists page: the picker, new list, members and rename/delete
     Tasks.tsx, TaskItem.tsx   the open list's tasks
     pickList.ts   which list is open
     messages.ts   the text shown for API errors
-  vite.config.ts
+  public/       the icon (icon.svg) and the PNGs made from it (`npm --prefix frontend run icons`)
+  vite.config.ts   Vite and the PWA plugin (manifest and service worker)
 tests/
 scripts/deploy.ps1
 ```
