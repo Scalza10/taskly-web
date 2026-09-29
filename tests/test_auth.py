@@ -100,3 +100,84 @@ def test_change_password_refuses_a_short_one(client):
 def test_api_answers_are_never_cached(client):
     assert client.get("/api/me").headers["cache-control"] == "no-store"
     assert "cache-control" not in client.get("/health").headers
+
+
+from taskly.auth import LoginThrottle
+
+
+class Clock:
+    def __init__(self):
+        self.now = 1000.0
+
+    def __call__(self):
+        return self.now
+
+
+def fail(client, username="maria"):
+    return client.post("/api/login", json={"username": username, "password": "not the password"})
+
+
+def test_ten_failures_lock_that_username_for_a_while(app, anon, settings):
+    add_user(settings, "maria")
+    clock = Clock()
+    app.state.login_throttle = LoginThrottle(clock)
+    for _ in range(10):
+        assert fail(anon).status_code == 401
+    locked = anon.post("/api/login", json={"username": "maria", "password": PASSWORD})
+    assert locked.status_code == 429
+    assert 1 <= int(locked.headers["retry-after"]) <= 900
+    clock.now += 901
+    login(anon, "maria")
+
+
+def test_the_lock_ignores_the_case_of_the_name(app, anon, settings):
+    add_user(settings, "maria")
+    app.state.login_throttle = LoginThrottle(Clock())
+    for name in ["maria", "MARIA"] * 5:
+        fail(anon, name)
+    assert fail(anon, "Maria").status_code == 429
+
+
+def test_thirty_failures_from_one_address_lock_every_name(app, anon, settings):
+    add_user(settings, "maria")
+    app.state.login_throttle = LoginThrottle(Clock())
+    for i in range(30):
+        fail(anon, f"guess{i}")
+    assert anon.post("/api/login", json={"username": "maria", "password": PASSWORD}).status_code == 429
+
+
+def test_a_good_login_clears_that_name_s_failures(app, anon, settings):
+    add_user(settings, "maria")
+    app.state.login_throttle = LoginThrottle(Clock())
+    for _ in range(9):
+        fail(anon)
+    login(anon, "maria")
+    for _ in range(9):
+        assert fail(anon).status_code == 401
+
+
+def test_wrong_current_passwords_count_as_failures(app, client):
+    app.state.login_throttle = LoginThrottle(Clock())
+    for _ in range(10):
+        assert client.post("/api/me/password", json={"current": "guess guess", "new": "a brand new one"}).status_code == 403
+    response = client.post("/api/me/password", json={"current": PASSWORD, "new": "a brand new one"})
+    assert response.status_code == 429
+
+
+def test_writes_from_another_site_are_refused(client):
+    evil = {"Origin": "https://evil.example"}
+    change = {"current": PASSWORD, "new": "a brand new one"}
+    response = client.post("/api/me/password", json=change, headers=evil)
+    assert response.status_code == 403
+    assert response.headers["cache-control"] == "no-store"
+    assert client.post("/api/logout", headers=evil).status_code == 403
+    assert client.get("/api/me").status_code == 200  # still logged in, password unchanged
+    login(client, "maria")
+
+
+def test_writes_from_the_same_origin_pass_even_with_a_port(app, settings):
+    add_user(settings, "maria")
+    with TestClient(app, base_url="http://localhost:5173") as client:
+        login(client, "maria")
+        response = client.post("/api/logout", headers={"Origin": "http://localhost:5173"})
+        assert response.status_code == 204
