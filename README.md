@@ -255,7 +255,8 @@ Check it works: `ssh -i $HOME\.ssh\reels_oci ubuntu@<vm-ip> "docker ps"`.
 ```
 
 It ships the last **commit** on `main` (`git archive`, so uncommitted changes
-stay behind) and unpacks it into `~/taskly`. Then, on the VM: it builds the new
+stay behind) and replaces the code in `~/taskly` with it, so files deleted in git
+go on the VM too; `data/` and `.env` stay. Then, on the VM: it builds the new
 image while the old app keeps serving, backs up the database, runs the pending
 migrations with the new image, and only then replaces the app, deletes the image
 it replaced, and waits up to a minute for `https://<site>/health`. If the build

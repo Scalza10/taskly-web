@@ -54,6 +54,10 @@ try {
     Invoke-Native "Packing $Branch" { git archive --format=tar.gz -o $archive $Branch }
     Invoke-Native "Uploading to $($settings.VmHost)" { scp -i $keyFile $archive "${target}:~/taskly.tar.gz" }
     # One ssh call (one passphrase prompt), stopping at the first failure:
+    # - the code is replaced, not unpacked over the old copy: every top-level entry of the archive
+    #   (frontend, taskly, Dockerfile, ...) is removed first, so files deleted in git disappear on the
+    #   VM too (a stale .tsx breaks the build). data/ and .env are never in the archive and are skipped
+    #   by name as well. The old app keeps running meanwhile: it runs from its image, not these files;
     # - the "web" network is shared with Caddy and the other apps; created if missing,
     #   since compose won't start without it;
     # - build while the old app keeps serving;
@@ -63,6 +67,8 @@ try {
     #   docker-compose.yml; the prune removes only untagged images nothing uses: the one replaced.
     $steps = @(
         "mkdir -p ~/taskly", "cd ~/taskly",
+        # Single quotes: PowerShell must not expand $entry.
+        'tar -tzf ~/taskly.tar.gz | cut -d/ -f1 | sort -u | while IFS= read -r entry; do case "$entry" in ""|.|..|data|.env) ;; *) rm -rf -- "$entry" ;; esac; done',
         "tar -xzf ~/taskly.tar.gz", "rm ~/taskly.tar.gz",
         "(docker network inspect web >/dev/null 2>&1 || docker network create web)",
         "docker compose build",
