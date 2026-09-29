@@ -8,24 +8,25 @@ A small shared to-do list: FastAPI + SQLite (stdlib `sqlite3`, no ORM) + a plain
 
 ## Commands
 
-The dev machine is Windows; use the venv's interpreter.
-
 ```powershell
-.venv\Scripts\python.exe -m pytest                                   # all tests, under a second
+.venv\Scripts\python.exe -m pytest                                   # API tests, under a second
 .venv\Scripts\python.exe -m pytest tests/test_api.py::test_delete    # one test
-.venv\Scripts\python.exe -m uvicorn taskly.main:create_app --factory --reload   # http://localhost:8000, reads .env
+npm --prefix frontend test                                           # page logic tests (Vitest)
+npm --prefix frontend run build                                      # typecheck + build into taskly/static/
+.venv\Scripts\python.exe -m uvicorn taskly.main:create_app --factory --reload   # API on :8000, reads .env
+npm --prefix frontend run dev                                        # page on :5173, proxies /api to :8000
 docker compose up -d --build                                         # http://localhost:8001; needs `docker network create web` once
 .\scripts\deploy.ps1                                                 # deploy the last commit on main
 ```
 
-No linter or formatter is configured.
+Node ≥ 22.12. No linter or formatter is configured.
 
 ## Architecture
 
-- **App factory.** `create_app(settings=None)` in `main.py` runs `db.migrate`, adds `routes.router`, and mounts `static/` at `/` last (so API routes win; `html=True` serves `index.html`). Tests pass their own `Settings`.
+- **App factory.** `create_app(settings=None)` in `main.py` runs `db.migrate`, adds `routes.router`, and mounts `settings.static_dir` at `/` last (so API routes win; `html=True` serves `index.html`), only if that folder exists: without a build the API still runs. Tests pass their own `Settings`; `make_settings` points `static_dir` at an empty tmp folder.
 - **Database.** `db.py`: `connect()` sets `row_factory`, foreign keys and a busy timeout; `migrate()` sets WAL and applies `MIGRATIONS[user_version:]`, each as one `executescript` transaction that also bumps `PRAGMA user_version`. **Only append to `MIGRATIONS`; never edit or reorder a deployed one.** Each request gets its own connection (`routes.get_db` → `db.session`).
 - **Queries** live in `todos.py` and return plain dicts (`done` as a bool). Routes stay thin: validate with pydantic (`Title` strips and bounds length), call `todos`, map `None`/`False` to 404.
-- **Frontend** (`taskly/static/`). Plain HTML/CSS/ES module, no build step, no JS dependencies. After every change `app.js` reloads the list from the server rather than patching the DOM. Keep all assets local: no CDNs or other sites.
+- **Frontend** (`frontend/`). React + TypeScript, built by Vite into `taskly/static/` (gitignored; the Docker image builds it in a Node stage). `src/api.ts` is the only place that calls `fetch`; it throws `ApiError` with the server's `detail`. After every change the page reloads the list from the server rather than patching state. Keep all assets local: no CDNs or other sites. The dev server's proxy must not use `changeOrigin`.
 - **Settings** (`settings.py`) read the environment and `.env` in the working directory. Only `DB_PATH` so far.
 
 ## Deployment (shared VM)
@@ -37,7 +38,7 @@ The VM runs one Caddy (`~/proxy`, owns 80/443) and several apps, each its own Co
 - **`name: taskly` in `docker-compose.yml`** pins the Compose project name, so it doesn't depend on the folder a clone lives in.
 - **Data lives only in `./data` (mounted at `/data`).** Anything written elsewhere in the container is lost on the next deploy.
 - **The VM's IP and host name are never committed.** `deploy.ps1` reads them from `scripts/deploy.local.psd1` (gitignored; template `deploy.local.example.psd1`), handed over with the SSH key on a USB stick. Docs use `<site>` and `<vm-ip>`.
-- **`deploy.ps1` ships the last commit via `git archive`**, not the working tree. It sets TLS 1.2 explicitly because Windows PowerShell 5.1 doesn't offer it by default.
+- **`deploy.ps1` ships the last commit via `git archive`**, not the working tree. On the VM it builds, backs up (`python -m taskly.backup`), migrates (`python -m taskly.migrate`), then runs `docker compose up`. Backup and migrate run as `docker run --rm --network none … taskly-app`, never `docker compose run`: a compose one-off container joins `web` with alias `taskly` and could receive Caddy's traffic. It sets TLS 1.2 explicitly because Windows PowerShell 5.1 doesn't offer it by default.
 - **The site is behind Caddy's `basic_auth`** (the app has no login), except `/health`, which the deploy script checks. If the app gets its own login, remove that from the Caddyfile block. README "Caddy: the address and the password" is the how-to for passwords, logins, the address and Caddy errors; keep it current when giving Caddy instructions.
 - **`/health` touches the database**, so a broken volume fails the deploy check instead of the first request.
 

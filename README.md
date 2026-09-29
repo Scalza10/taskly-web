@@ -6,21 +6,33 @@ Caddy, on its own host name.
 
 ## Run it locally
 
-**With Python** (3.12), from the repo folder. Windows (PowerShell):
+**With Python and Node** (Python 3.12, Node 22.12 or newer), from the repo folder.
+Once, and when requirements change:
 
 ```powershell
-python -m venv .venv                                  # once
-.venv\Scripts\pip.exe install -r requirements-dev.txt # once, and when requirements change
-.venv\Scripts\python.exe -m uvicorn taskly.main:create_app --factory --reload
+python -m venv .venv
+.venv\Scripts\pip.exe install -r requirements-dev.txt
+npm --prefix frontend install
 ```
 
-macOS or Linux: the same with `.venv/bin/pip` and `.venv/bin/python`.
+Then, in two terminals:
 
-Open <http://localhost:8000/>. `--reload` restarts the server when you save a
-Python file; for changes in `static/`, just refresh the page. Stop it with
-Ctrl+C. The database is created at `./data/taskly.db` and survives restarts;
-delete the file to start empty. No `.env` is needed; copy `.env.example` to
-`.env` only to put the database somewhere else (`DB_PATH`).
+```powershell
+.venv\Scripts\python.exe -m uvicorn taskly.main:create_app --factory --reload   # the API, port 8000
+npm --prefix frontend run dev                                                    # the page, port 5173
+```
+
+Open <http://localhost:5173/>. Saving a file in `frontend/src` updates the page
+at once; `--reload` restarts the API when you save a Python file. Stop either
+with Ctrl+C. macOS or Linux: `.venv/bin/pip` and `.venv/bin/python`.
+
+To see the page exactly as deployed, build it (`npm --prefix frontend run build`,
+into `taskly/static/`) and open uvicorn's own <http://localhost:8000/>. Without a
+build, port 8000 has only the API.
+
+The database is created at `./data/taskly.db` and survives restarts; delete the
+file to start empty. No `.env` is needed; copy `.env.example` to `.env` only to
+put the database somewhere else (`DB_PATH`).
 
 **With Docker** (the same container as on the VM):
 
@@ -32,9 +44,9 @@ docker compose up -d --build
 Open <http://localhost:8001/>. The database is `./data/taskly.db` on your
 machine, mounted into the container.
 
-**Tests:** `.venv\Scripts\python.exe -m pytest` (`.venv/bin/python` on macOS
-or Linux; under a second, and each test gets its own database, so your local
-data is untouched).
+**Tests:** `.venv\Scripts\python.exe -m pytest` for the API (under a second;
+each test gets its own database, so your local data is untouched) and
+`npm --prefix frontend test` for the page's logic.
 
 ## API
 
@@ -54,12 +66,17 @@ otherwise). Interactive docs are at `/docs`.
 
 ```
 taskly/
-  main.py       create_app(): runs the migrations, adds the routes, serves static/
-  settings.py   Settings (DB_PATH), read from the environment and .env
+  main.py       create_app(): runs the migrations, adds the routes, serves the built page
+  settings.py   Settings (DB_PATH, STATIC_DIR), read from the environment and .env
   db.py         the SQLite connection and the schema migrations
   todos.py      the queries
   routes.py     the HTTP endpoints
-  static/       index.html, app.js, style.css (no build step)
+  backup.py     python -m taskly.backup: copy the database to data/backups/
+  migrate.py    python -m taskly.migrate: apply pending migrations
+  static/       the built page (not in git)
+frontend/
+  src/          the page: React + TypeScript (api.ts talks to the API)
+  vite.config.ts
 tests/
 scripts/deploy.ps1
 ```
@@ -75,13 +92,28 @@ every migration the file hasn't had yet (it tracks them in `PRAGMA
 user_version`), each in its own transaction. Never edit or reorder a migration
 that has been deployed: the VM's database already ran it and won't run it again.
 
-**Backup** (on the VM; safe while the app runs):
+**Backups.** Every deploy copies the database to
+`~/taskly/data/backups/taskly-<UTC time>.db` before migrating, and keeps the
+newest 10. To make one by hand (safe while the app runs):
 
 ```bash
 cd ~/taskly
-docker compose exec app python -c "import sqlite3; sqlite3.connect('/data/taskly.db').backup(sqlite3.connect('/data/backup.db'))"
-cp data/backup.db ~/taskly-$(date +%F).db
+docker run --rm --network none -v ~/taskly/data:/data taskly-app python -m taskly.backup
 ```
+
+**Restoring a backup** (for example to go back to code from before a migration
+that removed something):
+
+```bash
+cd ~/taskly
+docker compose stop app
+cp data/taskly.db data/taskly-before-restore.db
+cp data/backups/taskly-<time>.db data/taskly.db
+rm -f data/taskly.db-wal data/taskly.db-shm     # stale journal files would corrupt the restored copy
+docker compose start app
+```
+
+Then deploy the code that matches that backup.
 
 ## Deploy
 
@@ -133,9 +165,12 @@ Check it works: `ssh -i $HOME\.ssh\reels_oci ubuntu@<vm-ip> "docker ps"`.
 ```
 
 It ships the last **commit** on `main` (`git archive`, so uncommitted changes
-stay behind), unpacks it into `~/taskly`, runs `docker compose up -d --build`,
-deletes the image it replaced, and waits up to a minute for
-`https://<site>/health`. `-Branch` deploys another branch; `-Config` points at
+stay behind) and unpacks it into `~/taskly`. Then, on the VM: it builds the new
+image while the old app keeps serving, backs up the database, runs the pending
+migrations with the new image, and only then replaces the app, deletes the image
+it replaced, and waits up to a minute for `https://<site>/health`. If the build
+or a migration fails, it stops there and the old app keeps running on the
+unchanged database. `-Branch` deploys another branch; `-Config` points at
 another settings file.
 
 Whoever deploys last wins: the VM gets exactly that person's commit. **Pull
