@@ -4,9 +4,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-A small shared to-do list: FastAPI + SQLite (stdlib `sqlite3`, no ORM) + a plain HTML/JS page, in one Docker container. It runs on the same VM as the Reels app (`C:\Project\ReelsTranslator`), behind that VM's shared Caddy. README.md covers running, the API, the database and deploying.
+A small shared to-do list: FastAPI + SQLite (stdlib `sqlite3`, no ORM) + a React + TypeScript page (built by Vite), in one Docker container. It runs on the same VM as the Reels app (`C:\Project\ReelsTranslator`), behind that VM's shared Caddy. README.md covers running, the API, the database and deploying.
 
 ## Commands
+
+The dev machine is Windows; use the venv's interpreter.
 
 ```powershell
 .venv\Scripts\python.exe -m pytest                                   # API tests, under a second
@@ -23,11 +25,11 @@ Node ≥ 22.12. No linter or formatter is configured.
 
 ## Architecture
 
-- **App factory.** `create_app(settings=None)` in `main.py` runs `db.migrate`, adds `routes.router`, and mounts `settings.static_dir` at `/` last (so API routes win; `html=True` serves `index.html`), only if that folder exists: without a build the API still runs. Tests pass their own `Settings`; `make_settings` points `static_dir` at an empty tmp folder.
+- **App factory.** `create_app(settings=None)` in `main.py` runs `db.migrate`, adds `routes.router`, and mounts `settings.static_dir` at `/` last (so API routes win; `html=True` serves `index.html`), only if that folder exists: without a build the API still runs. Tests pass their own `Settings`; `make_settings` points `static_dir` at an empty tmp folder. HTML answers get `Cache-Control: no-cache` (index.html names the build's hashed files).
 - **Database.** `db.py`: `connect()` sets `row_factory`, foreign keys and a busy timeout; `migrate()` sets WAL and applies `MIGRATIONS[user_version:]`, each as one `executescript` transaction that also bumps `PRAGMA user_version`. **Only append to `MIGRATIONS`; never edit or reorder a deployed one.** Each request gets its own connection (`routes.get_db` → `db.session`).
 - **Queries** live in `todos.py` and return plain dicts (`done` as a bool). Routes stay thin: validate with pydantic (`Title` strips and bounds length), call `todos`, map `None`/`False` to 404.
 - **Frontend** (`frontend/`). React + TypeScript, built by Vite into `taskly/static/` (gitignored; the Docker image builds it in a Node stage). `src/api.ts` is the only place that calls `fetch`; it throws `ApiError` with the server's `detail`. After every change the page reloads the list from the server rather than patching state. Keep all assets local: no CDNs or other sites. The dev server's proxy must not use `changeOrigin`.
-- **Settings** (`settings.py`) read the environment and `.env` in the working directory. Only `DB_PATH` so far.
+- **Settings** (`settings.py`) read the environment and `.env` in the working directory. So far `DB_PATH` and `STATIC_DIR` (the built page).
 
 ## Deployment (shared VM)
 
@@ -55,7 +57,6 @@ The VM runs one Caddy (`~/proxy`, owns 80/443) and several apps, each its own Co
 ### App
 - **On Windows, `mimetypes` can map `.js` to `text/plain`** from the registry, and browsers then refuse the module script. `main.py` forces `text/javascript`; `test_page_and_its_files_are_served` guards it.
 - **`Settings` reads `.env` from the working directory.** Tests build settings with `tests/conftest.py::make_settings(tmp_path)`, which passes `_env_file=None`. Use it.
-- **`[hidden] { display: none !important; }`** in `style.css` keeps `el.hidden` working against author `display` rules.
 
 ## Process
 

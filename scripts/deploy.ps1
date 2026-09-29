@@ -6,7 +6,7 @@ The VM's address and the SSH key come from scripts\deploy.local.psd1, which is n
 copy deploy.local.example.psd1 to it and fill it in (README, "Deploy").
 Uncommitted changes are not deployed; commit first. Two people deploying overwrite each
 other's code on the VM, so pull before you deploy.
-If the SSH key has a passphrase you are asked for it twice (upload, then restart),
+If the SSH key has a passphrase you are asked for it twice (upload, then build and restart),
 unless the key is loaded in ssh-agent.
 On the VM it builds the new image while the old app keeps serving, backs up the database
 (~/taskly/data/backups, newest 10), migrates it with the new image, and only then replaces

@@ -21,9 +21,6 @@
   }
 }
 
-/* JS toggles visibility with el.hidden; keep it winning over display rules. */
-[hidden] { display: none !important; }
-
 * { box-sizing: border-box; }
 
 body {
@@ -80,7 +77,6 @@ li {
 li input[type="checkbox"] { width: 20px; height: 20px; accent-color: var(--accent); }
 
 .title { flex: 1; overflow-wrap: anywhere; cursor: text; outline: none; }
-.title[contenteditable="plaintext-only"] { border-bottom: 1px solid var(--accent); }
 li.done .title { color: var(--muted); text-decoration: line-through; }
 
 button.delete {

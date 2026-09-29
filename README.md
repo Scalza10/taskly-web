@@ -1,7 +1,7 @@
 # Taskly
 
-A small shared to-do list: a FastAPI app with a SQLite database and a plain
-HTML/JS page. It runs in Docker on the same VM as Reels, behind the same
+A small shared to-do list: a FastAPI app with a SQLite database and a React +
+TypeScript page. It runs in Docker on the same VM as Reels, behind the same
 Caddy, on its own host name.
 
 ## Run it locally
@@ -12,7 +12,7 @@ Once, and when requirements change:
 ```powershell
 python -m venv .venv
 .venv\Scripts\pip.exe install -r requirements-dev.txt
-npm --prefix frontend install
+npm --prefix frontend ci
 ```
 
 Then, in two terminals:
@@ -84,7 +84,7 @@ scripts/deploy.ps1
 ## The database
 
 One SQLite file: `/data/taskly.db` in the container, which is
-`~/taskly/data/taskly.db` on the VM. Deploys never touch it.
+`~/taskly/data/taskly.db` on the VM. Deploys back it up and apply new migrations to it, but never replace it.
 
 **Changing the schema:** append an SQL string to `MIGRATIONS` in `db.py`, for
 example `"ALTER TABLE todos ADD COLUMN due_date TEXT;"`. On startup the app runs
@@ -101,19 +101,26 @@ cd ~/taskly
 docker run --rm --network none -v ~/taskly/data:/data taskly-app python -m taskly.backup
 ```
 
-**Restoring a backup** (for example to go back to code from before a migration
-that removed something):
+**Restoring a backup.** The files in `data/` belong to root (the container's
+user), so the copying happens in a throwaway container. With the app stopped:
 
 ```bash
 cd ~/taskly
 docker compose stop app
-cp data/taskly.db data/taskly-before-restore.db
-cp data/backups/taskly-<time>.db data/taskly.db
-rm -f data/taskly.db-wal data/taskly.db-shm     # stale journal files would corrupt the restored copy
-docker compose start app
+docker run --rm --network none -v ~/taskly/data:/data taskly-app sh -c '
+  cp /data/taskly.db /data/taskly-before-restore.db &&
+  cp /data/backups/taskly-<time>.db /data/taskly.db &&
+  rm -f /data/taskly.db-wal /data/taskly.db-shm'    # stale journal files would corrupt the restored copy
 ```
 
-Then deploy the code that matches that backup.
+Then, depending on why:
+
+- **Same code, the data went wrong:** `docker compose start app`.
+- **Going back to older code** (for example from before a migration that removed
+  something): don't start the app here; the running image would migrate the
+  restored database forward again. From your PC, deploy the older code:
+  `.\scripts\deploy.ps1 -Branch <commit>`. It backs up, finds nothing to migrate,
+  and starts the older app.
 
 ## Deploy
 
@@ -171,7 +178,9 @@ migrations with the new image, and only then replaces the app, deletes the image
 it replaced, and waits up to a minute for `https://<site>/health`. If the build
 or a migration fails, it stops there and the old app keeps running on the
 unchanged database. `-Branch` deploys another branch; `-Config` points at
-another settings file.
+another settings file. `-Branch` also takes a commit hash. Code from before these
+deploy steps existed must be deployed with the `deploy.ps1` of that same commit (its
+image has no `taskly.backup`).
 
 Whoever deploys last wins: the VM gets exactly that person's commit. **Pull
 before you deploy**, so you don't roll back the other person's changes.
