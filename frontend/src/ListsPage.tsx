@@ -75,7 +75,8 @@ export function ListsPage({ onSessionLost }: { onSessionLost: () => void }) {
       />
       {online && panel === "new" && <NewList change={change} onCreated={choose} onCancel={() => setPanel("none")} />}
       {online && panel === "settings" && current && (
-        <ListSettings key={current.id} list={current} me={view.me} change={change} onClose={() => setPanel("none")} />
+        // Not key={current.id}: Tasks below has that key, and siblings sharing a key leave this panel behind when it closes.
+        <ListSettings key={`settings-${current.id}`} list={current} me={view.me} change={change} onClose={() => setPanel("none")} />
       )}
       {error && <p className="error" role="alert">{error}</p>}
       {current ? (

@@ -71,9 +71,12 @@ export function ListSettings({ list, me, change, onClose }: Props) {
           <button type="button" className="plain" onClick={() => setConfirming(false)}>Cancel</button>
         </div>
       ) : (
-        <button type="button" className="plain danger-text" onClick={() => setConfirming(true)}>
-          {owner ? "Delete list" : "Leave list"}
-        </button>
+        <div className="row">
+          <button type="button" className="plain danger-text" onClick={() => setConfirming(true)}>
+            {owner ? "Delete list" : "Leave list"}
+          </button>
+          <button type="button" className="plain" onClick={onClose}>Close</button>
+        </div>
       )}
     </section>
   );
