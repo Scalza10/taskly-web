@@ -255,3 +255,7 @@ def test_a_lone_surrogate_in_a_password_is_refused_not_a_crash(client):
     assert raw("/api/login", {"username": "maria", "password": bad}).status_code == 422
     assert raw("/api/me/password", {"current": PASSWORD, "new": bad}).status_code == 422
     assert raw("/api/me/password", {"current": bad, "new": "a brand new one"}).status_code == 422
+
+
+def test_logout_tells_the_browser_to_forget_the_device(client):
+    assert client.post("/api/logout").headers["clear-site-data"] == '"storage"'

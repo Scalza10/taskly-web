@@ -166,6 +166,9 @@ def logout(request: Request, response: Response, conn: Conn) -> None:
     if token:
         sessions.delete_session(conn, token)
     clear_cookie(response, request)
+    # The page's offline copy (IndexedDB) and its service worker. API answers are
+    # no-store, so there is no HTTP cache to clear ("cache" can stall Chrome).
+    response.headers["Clear-Site-Data"] = '"storage"'
 
 
 @router.get("/me")

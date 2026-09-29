@@ -13,6 +13,7 @@ from .settings import Settings
 # On Windows, mimetypes reads .js from the registry, which can say text/plain;
 # browsers then refuse to run the page's module script.
 mimetypes.add_type("text/javascript", ".js")
+mimetypes.add_type("application/manifest+json", ".webmanifest")
 
 
 async def invalid_request(request: Request, exc: RequestValidationError) -> Response:

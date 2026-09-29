@@ -178,6 +178,7 @@ def test_page_and_its_files_are_served(tmp_path):
     (static / "assets").mkdir()
     (static / "assets" / "index-abc123.js").write_text("export {};")
     (static / "assets" / "index-abc123.css").write_text("body {}")
+    (static / "manifest.webmanifest").write_text("{}")
 
     with TestClient(create_app(make_settings(tmp_path, static_dir=str(static)))) as client:
         page = client.get("/")
@@ -187,6 +188,7 @@ def test_page_and_its_files_are_served(tmp_path):
         assert "cache-control" not in client.get("/assets/index-abc123.js").headers
         assert client.get("/assets/index-abc123.js").headers["content-type"].startswith("text/javascript")
         assert client.get("/assets/index-abc123.css").headers["content-type"].startswith("text/css")
+        assert client.get("/manifest.webmanifest").headers["content-type"].startswith("application/manifest+json")
 
 
 def test_api_runs_without_a_built_page(client):
