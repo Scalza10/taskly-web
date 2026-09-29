@@ -97,7 +97,7 @@ def test_change_password_needs_the_current_one(client):
 def test_change_password_refuses_a_short_one(client):
     response = client.post("/api/me/password", json={"current": PASSWORD, "new": "short"})
     assert response.status_code == 422
-    assert "at least 10" in response.json()["detail"]
+    assert "at least 6" in response.json()["detail"]
 
 
 def test_api_answers_are_never_cached(client):

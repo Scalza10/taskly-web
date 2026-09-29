@@ -31,8 +31,8 @@ export function ChangePassword({ onDone }: { onDone: () => void }) {
         <input type="password" value={current} onChange={(e) => setCurrent(e.target.value)} autoComplete="current-password" required />
       </label>
       <label>
-        New password (at least 10 characters)
-        <input type="password" value={next} onChange={(e) => setNext(e.target.value)} autoComplete="new-password" minLength={10} required />
+        New password (at least 6 characters)
+        <input type="password" value={next} onChange={(e) => setNext(e.target.value)} autoComplete="new-password" minLength={6} required />
       </label>
       <label>
         New password again

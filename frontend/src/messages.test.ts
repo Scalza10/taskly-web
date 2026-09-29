@@ -11,7 +11,7 @@ test("login messages", () => {
 
 test("password messages", () => {
   expect(passwordMessage(new ApiError(403, "The current password is wrong"))).toBe("The current password is wrong.");
-  expect(passwordMessage(new ApiError(422, "Passwords need at least 10 characters"))).toBe("Passwords need at least 10 characters.");
+  expect(passwordMessage(new ApiError(422, "Passwords need at least 6 characters"))).toBe("Passwords need at least 6 characters.");
   expect(passwordMessage(new ApiError(429, "x"))).toBe("Too many attempts. Try again in up to 15 minutes.");
 });
 

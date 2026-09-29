@@ -9,7 +9,7 @@ import secrets
 import threading
 
 N, R, P = 2**15, 8, 1
-MIN_LENGTH = 10
+MIN_LENGTH = 6
 
 # Each scrypt takes 32 MiB and releases the GIL: 40 at once would commit ~1.3 GiB on a shared VM.
 _SLOTS = threading.BoundedSemaphore(4)

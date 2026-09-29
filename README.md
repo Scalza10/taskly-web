@@ -64,7 +64,7 @@ each test gets its own database, so your local data is untouched) and
 | `POST /api/login` | `{"username", "password"}` | 204 and the session cookie; 401 if wrong; 429 after too many tries |
 | `POST /api/logout` | | 204; ends this device's session and tells the browser to clear the site's saved data (`Clear-Site-Data: "storage"`) |
 | `GET /api/me` | | `{"username"}` |
-| `POST /api/me/password` | `{"current", "new"}` | 204; logs out your other devices. 403 if `current` is wrong, 422 if `new` is under 10 characters |
+| `POST /api/me/password` | `{"current", "new"}` | 204; logs out your other devices. 403 if `current` is wrong, 422 if `new` is under 6 characters |
 | `GET /api/sync` | | Everything you can see: `{"me", "lists": [{"id", "name", "owner", "role", "members", "tasks": [...]}]}`, lists by name, tasks open first then newest |
 | `POST /api/lists` | `{"name": "Groceries"}` | 201 and the list; you own it |
 | `PATCH /api/lists/{id}` | `{"name": ...}` | The list. Owner only |
@@ -113,7 +113,7 @@ cd ~/taskly
 docker compose exec app python -m taskly.admin add-user <name>
 ```
 
-It asks for the password twice (at least 10 characters). Press Enter at the
+It asks for the password twice (at least 6 characters). Press Enter at the
 first prompt instead to have one made up and printed. Do this once per person.
 Names are 2–32 letters, digits, `.`, `_` or `-`; capitals don't matter when
 logging in, and the page shows the name as it was created.

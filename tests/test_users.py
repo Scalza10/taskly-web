@@ -24,8 +24,8 @@ def test_names_are_unique_regardless_of_case(conn):
 
 
 def test_short_passwords_are_refused(conn):
-    with pytest.raises(users.UserError, match="at least 10"):
-        users.create_user(conn, "maria", "123456789")
+    with pytest.raises(users.UserError, match="at least 6"):
+        users.create_user(conn, "maria", "12345")
 
 
 def test_authenticate(conn):
