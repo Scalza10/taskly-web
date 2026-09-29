@@ -1,9 +1,10 @@
 import pytest
+from contextlib import closing
 from fastapi.testclient import TestClient
 
 from taskly.main import create_app
 from taskly.settings import Settings
-from taskly import passwords
+from taskly import passwords, db, users
 
 
 def make_settings(tmp_path, **overrides) -> Settings:
@@ -11,6 +12,16 @@ def make_settings(tmp_path, **overrides) -> Settings:
     static_dir points at tmp_path/static, which exists only if a test creates it."""
     values = {"db_path": str(tmp_path / "taskly.db"), "static_dir": str(tmp_path / "static")}
     return Settings(_env_file=None, **{**values, **overrides})
+
+
+PASSWORD = "correct-horse-battery"
+
+
+def add_user(settings, username, password=PASSWORD) -> dict:
+    """Create an account straight in the database, as `taskly.admin add-user` would."""
+    db.migrate(settings.db_path)
+    with closing(db.connect(settings.db_path)) as conn:
+        return users.create_user(conn, username, password)
 
 
 @pytest.fixture
@@ -22,6 +33,13 @@ def settings(tmp_path):
 def client(settings):
     with TestClient(create_app(settings)) as client:
         yield client
+
+
+@pytest.fixture
+def conn(settings):
+    db.migrate(settings.db_path)
+    with closing(db.connect(settings.db_path)) as conn:
+        yield conn
 
 
 @pytest.fixture(autouse=True)
