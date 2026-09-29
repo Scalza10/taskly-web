@@ -42,3 +42,33 @@ def test_a_failed_migration_leaves_the_version_alone(tmp_path, monkeypatch):
     with sqlite3.connect(path) as conn:
         assert conn.execute("PRAGMA user_version").fetchone()[0] == version
         assert conn.execute("SELECT name FROM sqlite_master WHERE name = 'extra'").fetchone() is None
+
+
+def migrate_to(path, version, monkeypatch):
+    """Bring a database to exactly `version`, as an older deploy would have left it."""
+    with monkeypatch.context() as m:
+        m.setattr(db, "MIGRATIONS", db.MIGRATIONS[:version])
+        db.migrate(path)
+
+
+def test_migration_2_keeps_todos_and_adds_accounts(tmp_path, monkeypatch):
+    path = str(tmp_path / "taskly.db")
+    migrate_to(path, 1, monkeypatch)
+    with sqlite3.connect(path) as conn:
+        conn.execute("INSERT INTO todos (title) VALUES ('from before accounts')")
+
+    migrate_to(path, 2, monkeypatch)  # exactly 2: later migrations change todos again
+
+    with sqlite3.connect(path) as conn:
+        assert conn.execute("SELECT title, created_by, done_by FROM todos").fetchall() == [
+            ("from before accounts", None, None)
+        ]
+        conn.execute("INSERT INTO users (username, password_hash) VALUES ('maria', 'x')")
+        try:
+            conn.execute("INSERT INTO users (username, password_hash) VALUES ('MARIA', 'y')")
+        except sqlite3.IntegrityError:
+            pass
+        else:
+            raise AssertionError("usernames must be unique regardless of case")
+        conn.execute("INSERT INTO sessions (token_hash, user_id) VALUES ('h', 1)")
+        assert conn.execute("SELECT device FROM sessions").fetchone() == ("",)

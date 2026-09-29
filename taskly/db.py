@@ -18,6 +18,27 @@ MIGRATIONS = [
         updated_at TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
     );
     """,
+    # 2: accounts. Users are disabled, never deleted, so "added by" survives.
+    # Sessions store only the SHA-256 of the cookie's token.
+    """
+    CREATE TABLE users (
+        id            INTEGER PRIMARY KEY AUTOINCREMENT,
+        username      TEXT    NOT NULL UNIQUE COLLATE NOCASE,
+        password_hash TEXT    NOT NULL,
+        created_at    TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
+        disabled_at   TEXT
+    );
+    CREATE TABLE sessions (
+        token_hash   TEXT    PRIMARY KEY,
+        user_id      INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        device       TEXT    NOT NULL DEFAULT '',
+        created_at   TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
+        last_used_at TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+    );
+    CREATE INDEX sessions_user_id ON sessions(user_id);
+    ALTER TABLE todos ADD COLUMN created_by INTEGER REFERENCES users(id);
+    ALTER TABLE todos ADD COLUMN done_by    INTEGER REFERENCES users(id);
+    """,
 ]
 
 
