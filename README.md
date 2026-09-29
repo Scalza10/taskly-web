@@ -90,6 +90,18 @@ locally (`.venv\Scripts\python.exe -m taskly.admin …`):
 | Log someone out everywhere (a lost phone) | `revoke-sessions maria` |
 | See everyone | `list-users` |
 
+For example, to create an account on the VM:
+
+```bash
+cd ~/taskly
+docker compose exec app python -m taskly.admin add-user <name>
+```
+
+It asks for the password twice (at least 10 characters). Press Enter at the
+first prompt instead to have one made up and printed. Do this once per person.
+Names are 2–32 letters, digits, `.`, `_` or `-`; capitals don't matter when
+logging in, and the page shows the name as it was created.
+
 People can change their own password on the page; that also logs out their
 other devices. Logins last 90 days from the last time the device was used.
 After 10 wrong passwords for a name (or 30 from one address) in 15 minutes,
