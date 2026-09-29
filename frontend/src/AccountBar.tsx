@@ -24,7 +24,7 @@ export function AccountBar({ username, onLoggedOut }: { username: string; onLogg
         <button type="button" className="plain" onClick={() => setChanging(!changing)}>Change password</button>
         <button type="button" className="plain" onClick={logout}>Log out</button>
       </div>
-      {error && <p className="error" role="alert">{error}</p>}
+      {error && <p className="error account-error" role="alert">{error}</p>}
       {changing && <ChangePassword onDone={() => setChanging(false)} />}
     </>
   );

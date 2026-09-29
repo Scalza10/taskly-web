@@ -8,15 +8,19 @@ export function ChangePassword({ onDone }: { onDone: () => void }) {
   const [next, setNext] = useState("");
   const [again, setAgain] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
 
   async function submit(event: FormEvent) {
     event.preventDefault();
+    setError(null);
     if (next !== again) return setError("The new passwords don't match.");
+    setBusy(true);
     try {
       await api("POST", "/api/me/password", { current, new: next });
       onDone();
     } catch (e) {
       setError(passwordMessage(e));
+      setBusy(false);
     }
   }
 
@@ -37,7 +41,7 @@ export function ChangePassword({ onDone }: { onDone: () => void }) {
       <p className="hint">Your other devices will be logged out.</p>
       {error && <p className="error" role="alert">{error}</p>}
       <div className="row">
-        <button type="submit">Change password</button>
+        <button type="submit" disabled={busy}>Change password</button>
         <button type="button" className="plain" onClick={onDone}>Cancel</button>
       </div>
     </form>
