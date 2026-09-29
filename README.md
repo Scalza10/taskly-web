@@ -63,9 +63,9 @@ each test gets its own database, so your local data is untouched) and
 | `POST /api/lists` | `{"name": "Groceries"}` | 201 and the list; you own it |
 | `PATCH /api/lists/{id}` | `{"name": ...}` | The list. Owner only |
 | `DELETE /api/lists/{id}` | | 204; its tasks go too. Owner only |
-| `POST /api/lists/{id}/members` | `{"username": "tom"}` | 201 (200 if already in). Owner only; 404 for unknown users |
+| `POST /api/lists/{id}/members` | `{"username": "tom"}` | 201 (200 if already in). Owner only; 404 for a name that is unknown or disabled |
 | `DELETE /api/lists/{id}/members/{username}` | | 204. The owner removes anyone; anyone can remove themselves (leave), except the owner (409) |
-| `POST /api/tasks` | `{"id": "<uuid>", "list_id": "<uuid>", "title": "Milk"}` | 201 and the task. The same `id` again in the same list: 200 and the stored task (a safe retry) |
+| `POST /api/tasks` | `{"id": "<uuid>", "list_id": "<uuid>", "title": "Milk"}` | 201 and the task. The same `id` again in the same list: 200 and the stored task (a safe retry). The same `id` in another list: 409 |
 | `PATCH /api/tasks/{id}` | `{"title": ...}` and/or `{"done": true}` | The task |
 | `DELETE /api/tasks/{id}` | | 204 |
 
@@ -98,7 +98,7 @@ locally (`.venv\Scripts\python.exe -m taskly.admin …`):
 | Log someone out everywhere (a lost phone) | `revoke-sessions maria` |
 | See everyone | `list-users` |
 
-The first account created after phase 2 takes over the old list "Taskly" if it has no owner yet. Disabling someone hands each list they own to the member who joined it earliest.
+A list without an owner (the old list "Taskly", if it was migrated before any account existed) goes to the next account created. Disabling someone hands each list they own to the active member who joined it earliest; with no other active member, the list keeps its (disabled) owner.
 
 For example, to create an account on the VM:
 
@@ -167,7 +167,14 @@ that has been deployed: the VM's database already ran it and won't run it again.
 `~/taskly/data/backups/taskly-<UTC time>.db` before migrating, and keeps the
 newest 10. A backup taken right before a migration is named
 `taskly-<UTC time>-before-schema-<N>.db` and the rotation never deletes it;
-delete those by hand when you're sure you won't go back. To make one by hand (safe while the app runs):
+delete those by hand when you're sure you won't go back. Being root's, they need
+a throwaway container, like the restore below:
+
+```bash
+docker run --rm --network none -v ~/taskly/data:/data taskly-app sh -c 'rm /data/backups/taskly-<time>-before-schema-3.db'
+```
+
+To make one by hand (safe while the app runs):
 
 ```bash
 cd ~/taskly
@@ -185,6 +192,9 @@ docker run --rm --network none -v ~/taskly/data:/data taskly-app sh -c '
   cp /data/backups/taskly-<time>.db /data/taskly.db &&
   rm -f /data/taskly.db-wal /data/taskly.db-shm'    # stale journal files would corrupt the restored copy
 ```
+
+Going back to before phase 2 means restoring the `taskly-<time>-before-schema-3.db` file; the ordinary
+backups taken after it are already schema 3.
 
 Then, depending on why:
 
