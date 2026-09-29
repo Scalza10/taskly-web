@@ -37,3 +37,9 @@ def test_production_cost():
         assert (fresh.N, fresh.R, fresh.P) == (2**15, 8, 1)
     finally:
         importlib.reload(passwords)
+
+
+def test_a_password_with_a_lone_surrogate_hashes_and_verifies():
+    stored = passwords.hash_password("broken \ud800 text")
+    assert passwords.verify_password("broken \ud800 text", stored)
+    assert not passwords.verify_password("broken \ud801 text", stored)

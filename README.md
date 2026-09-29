@@ -92,7 +92,7 @@ locally (`.venv\Scripts\python.exe -m taskly.admin …`):
 People can change their own password on the page; that also logs out their
 other devices. Logins last 90 days from the last time the device was used.
 After 10 wrong passwords for a name (or 30 from one address) in 15 minutes,
-logins wait a few minutes.
+logins wait up to 15 minutes.
 
 **Locally:** create yourself an account once with
 `.venv\Scripts\python.exe -m taskly.admin add-user me`, then log in on the page.

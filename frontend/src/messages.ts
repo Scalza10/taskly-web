@@ -1,7 +1,7 @@
 // What to tell people when a login or password change fails.
 import { ApiError } from "./api";
 
-const TOO_MANY = "Too many attempts. Try again in a few minutes.";
+const TOO_MANY = "Too many attempts. Try again in up to 15 minutes.";
 const OFFLINE = "Can't reach Taskly. Check your connection.";
 
 export function isLoggedOut(error: unknown): boolean {

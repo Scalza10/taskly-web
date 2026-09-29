@@ -1,7 +1,10 @@
+import json
 import mimetypes
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request, Response
+from fastapi.encoders import jsonable_encoder
+from fastapi.exceptions import RequestValidationError
 from fastapi.staticfiles import StaticFiles
 
 from . import auth, db, routes
@@ -12,6 +15,13 @@ from .settings import Settings
 mimetypes.add_type("text/javascript", ".js")
 
 
+async def invalid_request(request: Request, exc: RequestValidationError) -> Response:
+    # FastAPI's own 422 echoes the input as UTF-8, which fails (a 500) on a lone surrogate:
+    # valid JSON, and pydantic refuses it in any field with a length limit. Escape it instead.
+    body = json.dumps({"detail": jsonable_encoder(exc.errors())}, ensure_ascii=True)
+    return Response(body, status_code=422, media_type="application/json")
+
+
 def create_app(settings: Settings | None = None) -> FastAPI:
     """App factory: uvicorn runs it with --factory, tests pass their own Settings."""
     settings = settings or Settings()
@@ -19,6 +29,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     app = FastAPI(title="Taskly")
     app.state.settings = settings
+    app.add_exception_handler(RequestValidationError, invalid_request)
     auth.install(app)
     app.include_router(routes.router)
     @app.middleware("http")

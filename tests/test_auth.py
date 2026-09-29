@@ -1,3 +1,6 @@
+import json
+
+import pytest
 from fastapi.testclient import TestClient
 
 from conftest import PASSWORD, add_user, login
@@ -181,3 +184,74 @@ def test_writes_from_the_same_origin_pass_even_with_a_port(app, settings):
         login(client, "maria")
         response = client.post("/api/logout", headers={"Origin": "http://localhost:5173"})
         assert response.status_code == 204
+
+
+def test_parallel_guesses_never_pass_the_limit(app, settings, monkeypatch):
+    import time
+    from concurrent.futures import ThreadPoolExecutor
+
+    from taskly import users
+
+    add_user(settings, "maria")
+    app.state.login_throttle = LoginThrottle(Clock())
+    real = users.authenticate
+
+    def slow(*args):  # as slow as scrypt at full cost, so the guesses overlap
+        time.sleep(0.1)
+        return real(*args)
+
+    monkeypatch.setattr(users, "authenticate", slow)
+    with ThreadPoolExecutor(40) as pool:
+        codes = list(pool.map(lambda _: fail(TestClient(app)).status_code, range(40)))
+    assert (codes.count(401), codes.count(429)) == (10, 30)
+
+
+def test_good_logins_never_count_against_the_address(app, anon, settings):
+    add_user(settings, "maria")
+    app.state.login_throttle = LoginThrottle(Clock())
+    for _ in range(31):
+        login(anon, "maria")
+    assert app.state.login_throttle.failures == {}
+
+
+def test_password_changes_never_count_as_failures(app, client):
+    app.state.login_throttle = LoginThrottle(Clock())
+    old = PASSWORD
+    for i in range(11):
+        new = f"a brand new one {i}"
+        assert client.post("/api/me/password", json={"current": old, "new": new}).status_code == 204
+        old = new
+    assert app.state.login_throttle.failures == {}
+
+
+@pytest.mark.parametrize("name", ["x" * 10_000, "\ud800ab", "has space"], ids=["10k chars", "lone surrogate", "space"])
+def test_an_impossible_name_is_a_wrong_login_that_counts_only_against_the_address(app, anon, settings, name):
+    add_user(settings, "maria")
+    throttle = app.state.login_throttle = LoginThrottle(Clock())
+    # Sent as raw JSON: httpx can't encode a lone surrogate, but a browser or script can send "\ud800".
+    body = json.dumps({"username": name, "password": "not the password"})
+    guess = lambda: anon.post("/api/login", content=body, headers={"Content-Type": "application/json"})
+    response = guess()
+    assert response.status_code == 401
+    assert response.json()["detail"] == "Wrong username or password"
+    assert [kind for kind, _ in throttle.failures] == ["ip"]
+    for _ in range(29):
+        guess()
+    assert anon.post("/api/login", json={"username": "maria", "password": PASSWORD}).status_code == 429
+
+
+def test_passwords_are_bounded(client):
+    long = "x" * 1025
+    assert client.post("/api/login", json={"username": "maria", "password": long}).status_code == 422
+    assert client.post("/api/me/password", json={"current": long, "new": "a brand new one"}).status_code == 422
+    assert client.post("/api/me/password", json={"current": PASSWORD, "new": long}).status_code == 422
+
+
+def test_a_lone_surrogate_in_a_password_is_refused_not_a_crash(client):
+    def raw(path, body):  # httpx can't encode a lone surrogate itself
+        return client.post(path, content=json.dumps(body), headers={"Content-Type": "application/json"})
+
+    bad = "\ud800" + "abcdefghijk"
+    assert raw("/api/login", {"username": "maria", "password": bad}).status_code == 422
+    assert raw("/api/me/password", {"current": PASSWORD, "new": bad}).status_code == 422
+    assert raw("/api/me/password", {"current": bad, "new": "a brand new one"}).status_code == 422

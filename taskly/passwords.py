@@ -6,14 +6,21 @@ breaking existing passwords: each hash is checked with its own parameters."""
 import hashlib
 import hmac
 import secrets
+import threading
 
 N, R, P = 2**15, 8, 1
 MIN_LENGTH = 10
 
+# Each scrypt takes 32 MiB and releases the GIL: 40 at once would commit ~1.3 GiB on a shared VM.
+_SLOTS = threading.BoundedSemaphore(4)
+
 
 def _scrypt(password: str, salt: bytes, n: int, r: int, p: int) -> bytes:
     # scrypt needs 128 * r * n bytes (32 MiB at the defaults), just over OpenSSL's default limit.
-    return hashlib.scrypt(password.encode(), salt=salt, n=n, r=r, p=p, maxmem=256 * r * n, dklen=32)
+    # surrogatepass: JSON can carry a lone surrogate, which plain encode() refuses.
+    data = password.encode("utf-8", "surrogatepass")
+    with _SLOTS:
+        return hashlib.scrypt(data, salt=salt, n=n, r=r, p=p, maxmem=256 * r * n, dklen=32)
 
 
 def hash_password(password: str) -> str:

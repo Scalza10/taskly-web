@@ -2,6 +2,7 @@
 middleware that refuses cross-site writes, marks API answers uncacheable and renews cookies."""
 
 import math
+import threading
 import time
 from collections import deque
 from collections.abc import Callable
@@ -9,9 +10,9 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, FastAPI, HTTPException, Request, Response
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
-from . import sessions, users
+from . import passwords, sessions, users
 from .deps import Conn
 
 COOKIE = "taskly_session"
@@ -45,18 +46,23 @@ def current_user(request: Request, conn: Conn) -> dict:
 CurrentUser = Annotated[dict, Depends(current_user)]
 
 
+Password = Annotated[str, Field(max_length=1024)]
+
+
 class Login(BaseModel):
-    username: str
-    password: str
+    username: str  # any length: login() refuses impossible names before they reach the throttle
+    password: Password
 
 
 class PasswordChange(BaseModel):
-    current: str
-    new: str
+    current: Password
+    new: Password
 
 
 class LoginThrottle:
-    """Failed logins in the last WINDOW seconds, per username and per client IP.
+    """Password attempts in the last WINDOW seconds, per username and per client IP: failed
+    ones and ones still being checked. attempt() checks and records in one step under a lock,
+    so parallel guesses can't all slip past the limit; a right password takes its attempt back.
 
     In memory: right for one uvicorn process; a deploy resets it. More workers would
     need the counters in the database."""
@@ -68,42 +74,68 @@ class LoginThrottle:
     def __init__(self, clock: Callable[[], float] = time.monotonic):
         self.clock = clock
         self.failures: dict[tuple[str, str], deque[float]] = {}
+        self.lock = threading.Lock()
 
-    def _keys(self, username: str, ip: str):
-        return [(("user", username.lower()), self.PER_USERNAME), (("ip", ip), self.PER_IP)]
+    def _keys(self, username: str | None, ip: str):
+        keys = [(("ip", ip), self.PER_IP)]
+        if username is not None:
+            keys.insert(0, (("user", username.lower()), self.PER_USERNAME))
+        return keys
 
-    def _recent(self, key) -> deque[float]:
+    def _recent(self, key, now: float) -> deque[float]:
         times = self.failures.get(key, deque())
-        while times and times[0] <= self.clock() - self.WINDOW:
+        while times and times[0] <= now - self.WINDOW:
             times.popleft()
         if not times:
             self.failures.pop(key, None)
         return times
 
-    def retry_after(self, username: str, ip: str) -> int:
-        """Seconds until another attempt is allowed; 0 if it is allowed now."""
-        wait = 0.0
-        for key, limit in self._keys(username, ip):
-            times = self._recent(key)
-            if len(times) >= limit:
-                wait = max(wait, times[-limit] + self.WINDOW - self.clock())
-        return math.ceil(wait) if wait > 0 else 0
+    def attempt(self, username: str | None, ip: str) -> int:
+        """0 if the attempt may go ahead, and then it counts as failed until succeeded() or
+        release(); else the seconds to wait. username=None counts against the IP only."""
+        with self.lock:
+            now = self.clock()
+            keys = self._keys(username, ip)
+            wait = 0.0
+            for key, limit in keys:
+                times = self._recent(key, now)
+                if len(times) >= limit:
+                    wait = max(wait, times[-limit] + self.WINDOW - now)
+            if wait > 0:
+                return math.ceil(wait)
+            for key, _ in keys:
+                self.failures.setdefault(key, deque()).append(now)
+            return 0
 
-    def failed(self, username: str, ip: str) -> None:
-        for key, _ in self._keys(username, ip):
-            self.failures.setdefault(key, deque()).append(self.clock())
+    def _take_back(self, key) -> None:
+        # Drops the newest entry: every entry is failed or in flight, so the count stays exact.
+        times = self.failures.get(key)
+        if times:
+            times.pop()
+            if not times:
+                del self.failures[key]
 
-    def succeeded(self, username: str) -> None:
-        self.failures.pop(("user", username.lower()), None)
+    def release(self, username: str, ip: str) -> None:
+        """Take back an attempt whose password was right."""
+        with self.lock:
+            for key, _ in self._keys(username, ip):
+                self._take_back(key)
+
+    def succeeded(self, username: str, ip: str) -> None:
+        """A good login: forget that name's failures and take back the attempt."""
+        with self.lock:
+            self.failures.pop(("user", username.lower()), None)
+            self._take_back(("ip", ip))
 
 
-def _check_throttle(request: Request, username: str) -> tuple[LoginThrottle, str]:
+def _attempt(request: Request, username: str | None) -> tuple[LoginThrottle, str]:
+    """Count a password attempt, or answer 429."""
     throttle: LoginThrottle = request.app.state.login_throttle
     # The real visitor: uvicorn runs with --proxy-headers and only Caddy can reach it.
     ip = request.client.host if request.client else "unknown"
-    wait = throttle.retry_after(username, ip)
+    wait = throttle.attempt(username, ip)
     if wait:
-        raise HTTPException(status_code=429, detail="Too many attempts. Try again in a few minutes.",
+        raise HTTPException(status_code=429, detail="Too many attempts. Try again in up to 15 minutes.",
                             headers={"Retry-After": str(wait)})
     return throttle, ip
 
@@ -113,12 +145,17 @@ router = APIRouter(prefix="/api")
 
 @router.post("/login", status_code=204)
 def login(body: Login, request: Request, response: Response, conn: Conn) -> None:
-    throttle, ip = _check_throttle(request, body.username)
+    if not users.USERNAME.fullmatch(body.username):
+        # No such user can exist. Counted against the IP only (a huge name never becomes a key)
+        # and checked against the dummy hash, so it takes as long as any wrong login.
+        _attempt(request, None)
+        passwords.verify_password(body.password, passwords.DUMMY_HASH)
+        raise HTTPException(status_code=401, detail="Wrong username or password")
+    throttle, ip = _attempt(request, body.username)
     user = users.authenticate(conn, body.username, body.password)
     if user is None:
-        throttle.failed(body.username, ip)
         raise HTTPException(status_code=401, detail="Wrong username or password")
-    throttle.succeeded(body.username)
+    throttle.succeeded(body.username, ip)
     device = sessions.device_label(request.headers.get("user-agent", ""))
     set_cookie(response, request, sessions.create_session(conn, user["id"], device))
 
@@ -138,11 +175,11 @@ def me(user: CurrentUser) -> dict:
 
 @router.post("/me/password", status_code=204)
 def change_password(body: PasswordChange, request: Request, user: CurrentUser, conn: Conn) -> None:
-    throttle, ip = _check_throttle(request, user["username"])
+    throttle, ip = _attempt(request, user["username"])
     # 403, not 401: the page treats 401 as "logged out".
     if users.authenticate(conn, user["username"], body.current) is None:
-        throttle.failed(user["username"], ip)
         raise HTTPException(status_code=403, detail="The current password is wrong")
+    throttle.release(user["username"], ip)
     try:
         users.set_password(conn, user["id"], body.new)
     except users.UserError as error:

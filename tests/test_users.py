@@ -61,3 +61,18 @@ def test_list_users_counts_sessions(conn):
     sessions.create_session(conn, maria["id"])
     listed = users.list_users(conn)
     assert [(u["username"], u["sessions"]) for u in listed] == [("ann", 0), ("maria", 1)]
+
+
+def test_an_unknown_name_still_checks_a_password(conn, monkeypatch):
+    from taskly import passwords
+
+    checked = []
+    real = passwords.verify_password
+
+    def recording(password, stored):
+        checked.append(stored)
+        return real(password, stored)
+
+    monkeypatch.setattr(passwords, "verify_password", recording)
+    assert users.authenticate(conn, "nobody", PASSWORD) is None
+    assert checked == [passwords.DUMMY_HASH]

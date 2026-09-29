@@ -30,6 +30,9 @@ def test_blank_or_too_long_title_is_rejected(client):
     assert client.post("/api/todos", json={"title": "   "}).status_code == 422
     assert client.post("/api/todos", json={"title": "x" * 501}).status_code == 422
     assert client.post("/api/todos", json={}).status_code == 422
+    # A lone surrogate is valid JSON that httpx can't send itself; it must be a 422, not a 500.
+    lone = client.post("/api/todos", content='{"title": "\\ud800"}', headers={"Content-Type": "application/json"})
+    assert lone.status_code == 422
 
 
 def test_list_puts_open_todos_first_then_newest(client):
