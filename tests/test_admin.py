@@ -2,7 +2,7 @@ from contextlib import closing
 
 import pytest
 
-from taskly import admin, db, sessions, users
+from taskly import admin, db, lists, sessions, users
 from conftest import PASSWORD, add_user
 
 
@@ -93,3 +93,25 @@ def test_list_users(settings, capsys):
 def test_unknown_users_are_an_error(settings, capsys, command):
     assert run(settings, command, "nobody", prompt=answers(PASSWORD, PASSWORD)) == 1
     assert "No user nobody" in capsys.readouterr().err
+
+
+def test_the_first_account_claims_the_old_list(settings, capsys):
+    db.migrate(settings.db_path)
+    with open_db(settings) as conn, conn:
+        conn.execute("INSERT INTO lists (id, name) VALUES ('legacy', 'Taskly')")
+    assert run(settings, "add-user", "maria", prompt=answers(PASSWORD, PASSWORD)) == 0
+    assert "Now owns: Taskly" in capsys.readouterr().out
+    with open_db(settings) as conn:
+        maria = users.find_user(conn, "maria")
+        assert lists.role(conn, "legacy", maria["id"]) == "owner"
+
+
+def test_disabling_an_owner_hands_their_lists_over(settings, capsys):
+    maria, tom = add_user(settings, "maria"), add_user(settings, "tom")
+    with open_db(settings) as conn:
+        list_id = lists.create_list(conn, "Groceries", maria["id"])
+        lists.add_member(conn, list_id, tom["id"])
+    assert run(settings, "disable-user", "maria") == 0
+    assert "Groceries now belongs to tom" in capsys.readouterr().out
+    with open_db(settings) as conn:
+        assert lists.role(conn, list_id, tom["id"]) == "owner"

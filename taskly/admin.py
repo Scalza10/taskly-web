@@ -11,7 +11,7 @@ import sys
 from collections.abc import Callable
 from contextlib import closing
 
-from . import db, sessions, users
+from . import db, lists, sessions, users
 from .settings import Settings
 
 
@@ -41,7 +41,9 @@ def add_user(conn, args, prompt) -> None:
     password, generated = _ask_password(prompt, allow_generated=True)
     user = users.create_user(conn, args.name, password)
     print(f"Created {user['username']}.")
-    # Phase 2: claim unowned lists here.
+    claimed = lists.claim_unowned(conn, user["id"])
+    if claimed:
+        print(f"Now owns: {', '.join(claimed)}")
     if generated:
         print(f"Password: {password}")
 
@@ -58,9 +60,10 @@ def reset_password(conn, args, prompt) -> None:
 
 def disable_user(conn, args, prompt) -> None:
     user = _user(conn, args.name)
+    for name, heir in lists.hand_over(conn, user["id"]):
+        print(f"{name} now belongs to {heir}.")
     users.set_disabled(conn, user["id"], True)
     ended = sessions.delete_user_sessions(conn, user["id"])
-    # Phase 2: hand over their lists here.
     print(f"Disabled {user['username']}; {ended} sessions ended.")
 
 
