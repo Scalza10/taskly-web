@@ -1,85 +1,174 @@
-import pytest
+import uuid
+
 from fastapi.testclient import TestClient
 
+from conftest import add_user, login, make_settings, new_list, new_task
 from taskly.main import create_app
-from conftest import add_user, login, make_settings
-
-pytestmark = pytest.mark.skip(reason="replaced in phase 2, task 4")
 
 
-def add(client, title="Buy milk"):
-    response = client.post("/api/todos", json={"title": title})
-    assert response.status_code == 201
+def sync(client):
+    response = client.get("/api/sync")
+    assert response.status_code == 200
     return response.json()
+
+
+def test_a_new_user_sees_no_lists(client):
+    assert sync(client) == {"me": "maria", "lists": []}
+
+
+def test_create_list(client):
+    made = new_list(client, "  Groceries  ")
+    assert (made["name"], made["owner"], made["role"], made["members"]) == ("Groceries", "maria", "owner", ["maria"])
+    assert [l["name"] for l in sync(client)["lists"]] == ["Groceries"]
+
+
+def test_list_names_are_checked(client):
+    assert client.post("/api/lists", json={"name": "  "}).status_code == 422
+    assert client.post("/api/lists", json={"name": "x" * 101}).status_code == 422
+
+
+def test_rename_and_delete_list(client):
+    made = new_list(client)
+    new_task(client, made["id"])
+    assert client.patch(f"/api/lists/{made['id']}", json={"name": "Food"}).json()["name"] == "Food"
+    assert client.delete(f"/api/lists/{made['id']}").status_code == 204
+    assert sync(client)["lists"] == []
+    assert client.delete(f"/api/lists/{made['id']}").status_code == 404
+
+
+def test_adding_members(client, settings):
+    add_user(settings, "tom")
+    add_user(settings, "ann")
+    made = new_list(client)
+    url = f"/api/lists/{made['id']}/members"
+
+    first = client.post(url, json={"username": "TOM"})
+    assert first.status_code == 201
+    assert first.json()["members"] == ["maria", "tom"]
+    assert client.post(url, json={"username": "tom"}).status_code == 200
+    assert client.post(url, json={"username": "nobody"}).status_code == 404
+
+    from contextlib import closing
+    from taskly import db, users
+    with closing(db.connect(settings.db_path)) as conn:
+        users.set_disabled(conn, users.find_user(conn, "ann")["id"], True)
+    assert client.post(url, json={"username": "ann"}).json()["detail"] == "No such user"
+
+
+def test_leaving_and_removing(app, client, settings):
+    add_user(settings, "tom")
+    made = new_list(client)
+    client.post(f"/api/lists/{made['id']}/members", json={"username": "tom"})
+
+    assert client.delete(f"/api/lists/{made['id']}/members/maria").status_code == 409
+    with TestClient(app) as tom:
+        login(tom, "tom")
+        assert tom.delete(f"/api/lists/{made['id']}/members/tom").status_code == 204
+        assert sync(tom)["lists"] == []
+        assert tom.patch(f"/api/tasks/{uuid.uuid4()}", json={"done": True}).status_code == 404
+    assert client.delete(f"/api/lists/{made['id']}/members/tom").status_code == 404
+
+
+def test_removed_members_lose_access_at_once(app, client, settings):
+    add_user(settings, "tom")
+    made = new_list(client)
+    task = new_task(client, made["id"])
+    client.post(f"/api/lists/{made['id']}/members", json={"username": "tom"})
+    with TestClient(app) as tom:
+        login(tom, "tom")
+        assert tom.patch(f"/api/tasks/{task['id']}", json={"done": True}).status_code == 200
+        assert client.delete(f"/api/lists/{made['id']}/members/tom").status_code == 204
+        assert tom.patch(f"/api/tasks/{task['id']}", json={"done": False}).status_code == 404
+        assert sync(tom)["lists"] == []
+
+
+def test_create_task(client):
+    made = new_list(client)
+    task_id = str(uuid.uuid4())
+    response = client.post("/api/tasks", json={"id": task_id, "list_id": made["id"], "title": "  Milk "})
+    assert response.status_code == 201
+    task = response.json()
+    assert (task["id"], task["list_id"], task["title"], task["done"]) == (task_id, made["id"], "Milk", False)
+    assert (task["created_by"], task["done_by"]) == ("maria", None)
+
+
+def test_a_retried_create_changes_nothing(client):
+    made = new_list(client)
+    task = new_task(client, made["id"], "Milk")
+    again = client.post("/api/tasks", json={"id": task["id"], "list_id": made["id"], "title": "Oat milk"})
+    assert again.status_code == 200
+    assert again.json()["title"] == "Milk"
+    assert len(sync(client)["lists"][0]["tasks"]) == 1
+
+
+def test_the_same_id_in_another_list_is_a_conflict(client):
+    first, second = new_list(client, "A"), new_list(client, "B")
+    task = new_task(client, first["id"])
+    clash = client.post("/api/tasks", json={"id": task["id"], "list_id": second["id"], "title": "x"})
+    assert clash.status_code == 409
+
+
+def test_task_input_is_checked(client):
+    made = new_list(client)
+    assert client.post("/api/tasks", json={"id": "7", "list_id": made["id"], "title": "x"}).status_code == 422
+    assert client.post("/api/tasks", json={"id": str(uuid.uuid4()), "list_id": made["id"], "title": " "}).status_code == 422
+    assert client.post("/api/tasks", json={"id": str(uuid.uuid4()), "list_id": made["id"], "title": "x" * 501}).status_code == 422
+    unknown_list = client.post("/api/tasks", json={"id": str(uuid.uuid4()), "list_id": str(uuid.uuid4()), "title": "x"})
+    assert unknown_list.status_code == 404
+
+
+def test_update_and_delete_task(client):
+    made = new_list(client)
+    task = new_task(client, made["id"])
+    done = client.patch(f"/api/tasks/{task['id']}", json={"done": True}).json()
+    assert (done["done"], done["done_by"], done["title"]) == (True, "maria", "Milk")
+    assert client.patch(f"/api/tasks/{task['id']}", json={"title": "Oat milk"}).json()["done"] is True
+    assert client.delete(f"/api/tasks/{task['id']}").status_code == 204
+    assert client.delete(f"/api/tasks/{task['id']}").status_code == 404
+    assert client.patch(f"/api/tasks/{task['id']}", json={"done": False}).status_code == 404
+
+
+def test_sync_sorts_lists_by_name_and_tasks_open_first(client):
+    new_list(client, "zoo")
+    food = new_list(client, "Food")
+    first = new_task(client, food["id"], "first")
+    new_task(client, food["id"], "second")
+    client.patch(f"/api/tasks/{first['id']}", json={"done": True})
+    seen = sync(client)
+    assert [l["name"] for l in seen["lists"]] == ["Food", "zoo"]
+    assert [t["title"] for t in seen["lists"][0]["tasks"]] == ["second", "first"]
+
+
+def test_lists_survive_a_restart(settings):
+    add_user(settings, "maria")
+    with TestClient(create_app(settings)) as client:
+        login(client, "maria")
+        new_task(client, new_list(client)["id"], "still here")
+    with TestClient(create_app(settings)) as client:
+        login(client, "maria")
+        assert [t["title"] for t in sync(client)["lists"][0]["tasks"]] == ["still here"]
+
+
+def test_lone_surrogates_are_422_not_500(client):
+    made = new_list(client)
+    json_type = {"Content-Type": "application/json"}
+    task = client.post("/api/tasks", content='{"id": "%s", "list_id": "%s", "title": "\\ud800"}' % (uuid.uuid4(), made["id"]), headers=json_type)
+    assert task.status_code == 422
+    named = client.post("/api/lists", content='{"name": "\\ud800"}', headers=json_type)
+    assert named.status_code == 422
+
+
+def test_member_names_are_checked_before_any_query(client):
+    made = new_list(client)
+    url = f"/api/lists/{made['id']}/members"
+    lone = client.post(url, content='{"username": "\\ud800"}', headers={"Content-Type": "application/json"})
+    assert (lone.status_code, lone.json()["detail"]) == (404, "No such user")
+    long = client.post(url, json={"username": "x" * 10000})
+    assert (long.status_code, long.json()["detail"]) == (404, "No such user")
 
 
 def test_health(client):
     assert client.get("/health").json() == {"status": "ok"}
-
-
-def test_starts_empty(client):
-    assert client.get("/api/todos").json() == []
-
-
-def test_create_returns_the_todo(client):
-    todo = add(client, "  Buy milk  ")
-    assert todo["title"] == "Buy milk"
-    assert todo["done"] is False
-    assert isinstance(todo["id"], int)
-    assert todo["created_at"].endswith("Z")
-
-
-def test_blank_or_too_long_title_is_rejected(client):
-    assert client.post("/api/todos", json={"title": "   "}).status_code == 422
-    assert client.post("/api/todos", json={"title": "x" * 501}).status_code == 422
-    assert client.post("/api/todos", json={}).status_code == 422
-    # A lone surrogate is valid JSON that httpx can't send itself; it must be a 422, not a 500.
-    lone = client.post("/api/todos", content='{"title": "\\ud800"}', headers={"Content-Type": "application/json"})
-    assert lone.status_code == 422
-
-
-def test_list_puts_open_todos_first_then_newest(client):
-    first = add(client, "first")
-    second = add(client, "second")
-    third = add(client, "third")
-    client.patch(f"/api/todos/{third['id']}", json={"done": True})
-
-    titles = [todo["title"] for todo in client.get("/api/todos").json()]
-    assert titles == ["second", "first", "third"]
-    assert first["id"] < second["id"]
-
-
-def test_patch_changes_only_given_fields(client):
-    todo = add(client, "Buy milk")
-
-    done = client.patch(f"/api/todos/{todo['id']}", json={"done": True}).json()
-    assert done["done"] is True
-    assert done["title"] == "Buy milk"
-
-    renamed = client.patch(f"/api/todos/{todo['id']}", json={"title": "Buy oat milk"}).json()
-    assert renamed["title"] == "Buy oat milk"
-    assert renamed["done"] is True
-
-
-def test_patch_unknown_todo_is_404(client):
-    assert client.patch("/api/todos/999", json={"done": True}).status_code == 404
-
-
-def test_delete(client):
-    todo = add(client)
-    assert client.delete(f"/api/todos/{todo['id']}").status_code == 204
-    assert client.get("/api/todos").json() == []
-    assert client.delete(f"/api/todos/{todo['id']}").status_code == 404
-
-
-def test_todos_survive_a_restart(settings):
-    add_user(settings, "maria")
-    with TestClient(create_app(settings)) as client:
-        login(client, "maria")
-        add(client, "still here")
-    with TestClient(create_app(settings)) as client:
-        login(client, "maria")
-        assert [todo["title"] for todo in client.get("/api/todos").json()] == ["still here"]
 
 
 def test_page_and_its_files_are_served(tmp_path):
@@ -103,27 +192,6 @@ def test_page_and_its_files_are_served(tmp_path):
 def test_api_runs_without_a_built_page(client):
     assert client.get("/health").json() == {"status": "ok"}
     assert client.get("/").status_code == 404
-
-
-def test_todos_record_who_added_and_who_ticked(app, client, settings):
-    todo = add(client, "Buy milk")
-    assert (todo["created_by"], todo["done_by"]) == ("maria", None)
-
-    add_user(settings, "tom")
-    with TestClient(app) as tom:
-        login(tom, "tom")
-        done = tom.patch(f"/api/todos/{todo['id']}", json={"done": True}).json()
-        assert (done["created_by"], done["done_by"]) == ("maria", "tom")
-        renamed = tom.patch(f"/api/todos/{todo['id']}", json={"title": "Buy oat milk"}).json()
-        assert renamed["done_by"] == "tom"
-
-    undone = client.patch(f"/api/todos/{todo['id']}", json={"done": False}).json()
-    assert undone["done_by"] is None
-
-
-def test_todos_need_a_login(anon):
-    assert anon.get("/api/todos").status_code == 401
-    assert anon.post("/api/todos", json={"title": "x"}).status_code == 401
 
 
 def test_api_docs_are_off_unless_asked_for(client, tmp_path):

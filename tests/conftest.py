@@ -1,3 +1,5 @@
+import uuid
+
 import pytest
 from contextlib import closing
 from fastapi.testclient import TestClient
@@ -69,3 +71,15 @@ def fast_passwords(monkeypatch):
     Also lowers the dummy hash cost so unknown username logins in tests are fast."""
     monkeypatch.setattr(passwords, "N", 2**4)
     monkeypatch.setattr(passwords, "DUMMY_HASH", passwords.hash_password("dummy"))
+
+
+def new_list(client, name="Groceries") -> dict:
+    response = client.post("/api/lists", json={"name": name})
+    assert response.status_code == 201, response.text
+    return response.json()
+
+
+def new_task(client, list_id, title="Milk") -> dict:
+    response = client.post("/api/tasks", json={"id": str(uuid.uuid4()), "list_id": list_id, "title": title})
+    assert response.status_code == 201, response.text
+    return response.json()
