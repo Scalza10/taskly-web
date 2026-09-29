@@ -4,12 +4,13 @@ import type { TaskList } from "./api";
 type Props = {
   lists: TaskList[];
   current: TaskList | undefined;
+  online: boolean;
   onChoose: (id: string) => void;
   onNew: () => void;
   onSettings: () => void;
 };
 
-export function ListPicker({ lists, current, onChoose, onNew, onSettings }: Props) {
+export function ListPicker({ lists, current, online, onChoose, onNew, onSettings }: Props) {
   return (
     <div className="picker">
       {current ? (
@@ -19,8 +20,8 @@ export function ListPicker({ lists, current, onChoose, onNew, onSettings }: Prop
       ) : (
         <h1>Taskly</h1>
       )}
-      {current && <button type="button" className="plain" onClick={onSettings}>Settings</button>}
-      <button type="button" className="plain" onClick={onNew}>New list</button>
+      {current && <button type="button" className="plain" disabled={!online} title={online ? undefined : "Needs a connection"} onClick={onSettings}>Settings</button>}
+      <button type="button" className="plain" disabled={!online} title={online ? undefined : "Needs a connection"} onClick={onNew}>New list</button>
     </div>
   );
 }

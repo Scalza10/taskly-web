@@ -160,3 +160,9 @@ ul.members li { padding: 4px 0; margin: 0; border: 0; background: none; justify-
 .confirm { align-items: center; flex-wrap: wrap; }
 button.danger { background: var(--danger); }
 button.danger-text { color: var(--danger); align-self: flex-start; }
+
+/* A change not sent to the server yet. */
+li.pending { border-style: dashed; }
+
+.status { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin-top: 24px; color: var(--muted); font-size: 13px; }
+.status.offline, .status.trouble { color: var(--text); }

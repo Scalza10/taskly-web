@@ -1,9 +1,9 @@
 // One task: tick it, click the title to rename (Enter or leaving the field saves, Escape cancels), × deletes.
 import { useRef, useState, type FocusEvent, type KeyboardEvent } from "react";
-import { api, type Task } from "./api";
-import type { Change } from "./ListsPage";
+import type { Task } from "./api";
+import type { Enqueue } from "./useLocal";
 
-export function TaskItem({ task, change }: { task: Task; change: Change }) {
+export function TaskItem({ task, enqueue }: { task: Task; enqueue: Enqueue }) {
   const [editing, setEditing] = useState(false);
   const cancelled = useRef(false);
   const path = `/api/tasks/${task.id}`;
@@ -23,18 +23,18 @@ export function TaskItem({ task, change }: { task: Task; change: Change }) {
       return;
     }
     const newTitle = event.currentTarget.value.trim();
-    if (newTitle && newTitle !== task.title) void change(() => api("PATCH", path, { title: newTitle }));
+    if (newTitle && newTitle !== task.title) void enqueue({ method: "PATCH", path, body: { title: newTitle } });
   }
 
   return (
-    <li className={task.done ? "done" : undefined}>
+    <li className={[task.done && "done", task.pending && "pending"].filter(Boolean).join(" ") || undefined}>
       <input
         type="checkbox"
         checked={task.done}
         aria-label="done"
         onChange={(e) => {
           const done = e.target.checked;
-          void change(() => api("PATCH", path, { done }));
+          void enqueue({ method: "PATCH", path, body: { done } });
         }}
       />
       <div className="body">
@@ -59,7 +59,7 @@ export function TaskItem({ task, change }: { task: Task; change: Change }) {
           </small>
         )}
       </div>
-      <button className="delete" aria-label={`delete "${task.title}"`} onClick={() => void change(() => api("DELETE", path))}>
+      <button className="delete" aria-label={`delete "${task.title}"`} onClick={() => void enqueue({ method: "DELETE", path })}>
         ×
       </button>
     </li>

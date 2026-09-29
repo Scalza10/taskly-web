@@ -1,35 +1,30 @@
-// The lists: reads everything from /api/sync, and after every change reads it again,
-// so the page always shows what the server has.
+// The lists, from the device's copy (works offline). Task changes queue up and sync;
+// list and member changes go straight to the server and need a connection.
 import { useEffect, useState } from "react";
-import { api, type Snapshot } from "./api";
+import { ApiError } from "./api";
+import { sync } from "./device";
 import { ListPicker } from "./ListPicker";
 import { ListSettings } from "./ListSettings";
 import { isLoggedOut } from "./messages";
 import { NewList } from "./NewList";
 import { pickList, savedList, saveList } from "./pickList";
+import { StatusLine } from "./StatusLine";
 import { Tasks } from "./Tasks";
+import { useLocal } from "./useLocal";
+import { applyQueue } from "./view";
 
 export type Change = <T>(request: () => Promise<T>) => Promise<T | undefined>;
 type Panel = "none" | "new" | "settings";
 
-export function ListsPage({ onLoggedOut }: { onLoggedOut: () => void }) {
-  const [snapshot, setSnapshot] = useState<Snapshot | null>(null);
+export function ListsPage({ onSessionLost }: { onSessionLost: () => void }) {
+  const { local, enqueue } = useLocal();
   const [selected, setSelected] = useState<string | null>(savedList);
   const [panel, setPanel] = useState<Panel>("none");
   const [error, setError] = useState<string | null>(null);
 
-  function fail(e: unknown) {
-    if (isLoggedOut(e)) onLoggedOut();
-    else setError((e as Error).message);
-  }
-
-  async function refresh() {
-    try {
-      setSnapshot(await api<Snapshot>("GET", "/api/sync"));
-    } catch (e) {
-      fail(e);
-    }
-  }
+  useEffect(() => {
+    if (local?.sync.loggedOut) onSessionLost();
+  }, [local, onSessionLost]);
 
   async function change<T>(request: () => Promise<T>): Promise<T | undefined> {
     let result: T | undefined;
@@ -37,15 +32,15 @@ export function ListsPage({ onLoggedOut }: { onLoggedOut: () => void }) {
       result = await request();
       setError(null);
     } catch (e) {
-      fail(e);
+      if (isLoggedOut(e)) {
+        onSessionLost();
+        return undefined;
+      }
+      setError(e instanceof ApiError ? e.message : "That needs a connection.");
     }
-    await refresh();
+    await sync.request();
     return result;
   }
-
-  useEffect(() => {
-    void refresh();
-  }, []);
 
   function choose(id: string) {
     setSelected(id);
@@ -53,30 +48,42 @@ export function ListsPage({ onLoggedOut }: { onLoggedOut: () => void }) {
     setPanel("none");
   }
 
-  if (!snapshot) return <main>{error && <p className="error" role="alert">{error}</p>}</main>;
+  if (!local) return null;
+  if (!local.stored) {
+    return (
+      <main>
+        <h1>Taskly</h1>
+        <StatusLine local={local} />
+      </main>
+    );
+  }
 
-  const current = snapshot.lists.find((list) => list.id === pickList(snapshot.lists, selected));
+  const view = applyQueue(local.stored.data, local.queue);
+  const current = view.lists.find((list) => list.id === pickList(view.lists, selected));
+  const online = local.sync.connection === "online";
   const toggle = (which: Panel) => setPanel(panel === which ? "none" : which);
 
   return (
     <main>
       <ListPicker
-        lists={snapshot.lists}
+        lists={view.lists}
         current={current}
+        online={online}
         onChoose={choose}
         onNew={() => toggle("new")}
         onSettings={() => toggle("settings")}
       />
-      {panel === "new" && <NewList change={change} onCreated={choose} onCancel={() => setPanel("none")} />}
-      {panel === "settings" && current && (
-        <ListSettings key={current.id} list={current} me={snapshot.me} change={change} onClose={() => setPanel("none")} />
+      {online && panel === "new" && <NewList change={change} onCreated={choose} onCancel={() => setPanel("none")} />}
+      {online && panel === "settings" && current && (
+        <ListSettings key={current.id} list={current} me={view.me} change={change} onClose={() => setPanel("none")} />
       )}
       {error && <p className="error" role="alert">{error}</p>}
       {current ? (
-        <Tasks key={current.id} list={current} change={change} />
+        <Tasks key={current.id} list={current} enqueue={enqueue} />
       ) : (
         <p className="empty">No lists yet. Make one with “New list”.</p>
       )}
+      <StatusLine local={local} />
     </main>
   );
 }
