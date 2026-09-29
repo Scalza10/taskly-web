@@ -37,19 +37,28 @@ export function TodoItem({ todo, change }: { todo: Todo; change: Change }) {
           void change(() => api("PATCH", path, { done }));
         }}
       />
-      {editing ? (
-        <input
-          className="title"
-          aria-label="title"
-          defaultValue={todo.title}
-          maxLength={500}
-          autoFocus
-          onKeyDown={onKeyDown}
-          onBlur={onBlur}
-        />
-      ) : (
-        <span className="title" onClick={() => setEditing(true)}>{todo.title}</span>
-      )}
+      <div className="body">
+        {editing ? (
+          <input
+            className="title"
+            aria-label="title"
+            defaultValue={todo.title}
+            maxLength={500}
+            autoFocus
+            onKeyDown={onKeyDown}
+            onBlur={onBlur}
+          />
+        ) : (
+          <span className="title" onClick={() => setEditing(true)}>{todo.title}</span>
+        )}
+        {(todo.created_by || todo.done_by) && (
+          <small className="by">
+            {[todo.created_by && `added by ${todo.created_by}`, todo.done_by && `done by ${todo.done_by}`]
+              .filter(Boolean)
+              .join(" · ")}
+          </small>
+        )}
+      </div>
       <button className="delete" aria-label={`delete "${todo.title}"`} onClick={() => void change(() => api("DELETE", path))}>
         ×
       </button>

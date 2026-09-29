@@ -4,9 +4,13 @@ export type Todo = {
   id: number;
   title: string;
   done: boolean;
+  created_by: string | null;
+  done_by: string | null;
   created_at: string;
   updated_at: string;
 };
+
+export type Me = { username: string };
 
 export class ApiError extends Error {
   readonly status: number;
