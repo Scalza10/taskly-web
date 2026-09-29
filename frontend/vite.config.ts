@@ -5,6 +5,7 @@ import { VitePWA } from "vite-plugin-pwa";
 // npm run dev serves the page on 5173 and sends API calls to uvicorn on 8000.
 // No changeOrigin: the Host header must stay localhost:5173, because from phase 1b
 // the API refuses writes whose Origin doesn't match the Host.
+// Objects, not strings: Vite turns `"/api": "http://..."` into { target, changeOrigin: true }.
 const backend = "http://localhost:8000";
 
 export default defineConfig({
@@ -35,6 +36,6 @@ export default defineConfig({
     }),
   ],
   build: { outDir: "../taskly/static", emptyOutDir: true },
-  server: { port: 5173, strictPort: true, proxy: { "/api": backend, "/health": backend } },
+  server: { port: 5173, strictPort: true, proxy: { "/api": { target: backend }, "/health": { target: backend } } },
   test: { environment: "node" },
 });
