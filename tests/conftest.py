@@ -3,6 +3,7 @@ from fastapi.testclient import TestClient
 
 from taskly.main import create_app
 from taskly.settings import Settings
+from taskly import passwords
 
 
 def make_settings(tmp_path, **overrides) -> Settings:
@@ -21,3 +22,11 @@ def settings(tmp_path):
 def client(settings):
     with TestClient(create_app(settings)) as client:
         yield client
+
+
+@pytest.fixture(autouse=True)
+def fast_passwords(monkeypatch):
+    """scrypt at full cost takes ~100 ms per hash; tests hash a lot. test_passwords checks the real cost.
+    Also lowers the dummy hash cost so unknown username logins in tests are fast."""
+    monkeypatch.setattr(passwords, "N", 2**4)
+    monkeypatch.setattr(passwords, "DUMMY_HASH", passwords.hash_password("dummy"))
