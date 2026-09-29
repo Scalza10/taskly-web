@@ -1,4 +1,4 @@
-// Who is logged in, and a menu (the burger button) with "Sync" (send waiting changes and download
+// Who is logged in, the light/dark button, and a menu (the burger button) with "Sync" (send waiting changes and download
 // the latest now; the result shows in the status line), "Download" (install as an app), "Change
 // password" and "Log out" (the logout itself lives in App, so it survives the switch to the login
 // screen when the session has expired). One button keeps the header on one line on any phone.
@@ -6,6 +6,7 @@ import { useEffect, useRef, useState } from "react";
 import { ChangePassword } from "./ChangePassword";
 import { sync } from "./device";
 import { promptInstall, useInstall } from "./install";
+import { currentTheme, setTheme, systemDark, type Theme } from "./theme";
 
 export function AccountBar({ username, onLogout }: { username: string; onLogout: () => void }) {
   const [open, setOpen] = useState(false);
@@ -56,6 +57,7 @@ export function AccountBar({ username, onLogout }: { username: string; onLogout:
     <>
       <div className="account">
         <span>{username}</span>
+        <ThemeButton />
         <div className="menu" ref={menu}>
           <button
             type="button"
@@ -85,6 +87,40 @@ export function AccountBar({ username, onLogout }: { username: string; onLogout:
       {steps && install !== "installed" && <InstallSteps onClose={() => setSteps(false)} />}
       {changing && <ChangePassword onDone={() => setChanging(false)} />}
     </>
+  );
+}
+
+// Shows what a tap switches to: the moon in light mode, the sun in dark mode.
+function ThemeButton() {
+  const [theme, setShown] = useState<Theme>(currentTheme);
+
+  // Until someone chooses, the page follows the device, which can change while it's open.
+  useEffect(() => {
+    const follow = () => setShown(currentTheme());
+    systemDark.addEventListener("change", follow);
+    return () => systemDark.removeEventListener("change", follow);
+  }, []);
+
+  function toggle() {
+    const next = theme === "dark" ? "light" : "dark";
+    setTheme(next);
+    setShown(next);
+  }
+
+  const label = theme === "dark" ? "Light mode" : "Dark mode";
+  return (
+    <button type="button" className="plain theme" onClick={toggle} aria-label={label} title={label}>
+      <svg viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+        {theme === "dark" ? (
+          <>
+            <circle cx="10" cy="10" r="3.5" />
+            <path d="M10 1.5v2M10 16.5v2M1.5 10h2M16.5 10h2M4 4l1.4 1.4M14.6 14.6L16 16M4 16l1.4-1.4M14.6 5.4L16 4" />
+          </>
+        ) : (
+          <path d="M16.5 12.2A7 7 0 1 1 7.8 3.5a5.5 5.5 0 0 0 8.7 8.7z" />
+        )}
+      </svg>
+    </button>
   );
 }
 

@@ -9,8 +9,10 @@
   --danger: #c43d3d;
 }
 
+/* Dark follows the device unless the header's button chose one (data-theme, see theme.ts).
+   The dark colours appear twice: once for the device's setting, once for the choice. */
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-theme="light"]) {
     --bg: #151514;
     --card: #1f1f1d;
     --text: #ecece6;
@@ -20,6 +22,17 @@
     --danger: #e27272;
   }
 }
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #151514;
+  --card: #1f1f1d;
+  --text: #ecece6;
+  --muted: #9a9a92;
+  --line: #33332f;
+  --accent: #7ea2f0;
+  --danger: #e27272;
+}
+:root[data-theme="light"] { color-scheme: light; }
 
 * { box-sizing: border-box; }
 
@@ -133,7 +146,7 @@ button:disabled { opacity: 0.6; cursor: default; }
 .account span { margin-right: auto; }
 /* The header's one button opens the account menu under it, over the page. */
 .menu { position: relative; }
-button.burger { display: flex; padding: 6px; }
+button.burger, button.theme { display: flex; padding: 6px; }
 .menu-items {
   position: absolute;
   top: calc(100% + 4px);

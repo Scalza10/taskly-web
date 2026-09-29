@@ -144,6 +144,9 @@ when opened, every 30 seconds while open, and when you press **Sync** in the men
 lists, settings and logging out need a connection. If someone deleted a task you
 changed offline, your change is dropped and the app says so.
 
+**Light or dark:** it follows the device until you tap the sun/moon button at the
+top; that choice stays on the device until you log out.
+
 **Logging out** removes everything Taskly saved on the device. If changes
 haven't synced yet, it asks first. Someone else logging in on the same device
 never sees or sends your unsent changes.

@@ -4,6 +4,15 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#f6f6f4">
+  <script>
+    // Before the first paint: the light or dark choice from the header's button (src/theme.ts).
+    try {
+      var theme = localStorage.getItem("taskly-theme");
+      var dark = theme ? theme === "dark" : matchMedia("(prefers-color-scheme: dark)").matches;
+      if (theme === "light" || theme === "dark") document.documentElement.dataset.theme = theme;
+      document.querySelector('meta[name="theme-color"]').content = dark ? "#151514" : "#f6f6f4";
+    } catch (e) {}
+  </script>
   <link rel="icon" href="/favicon.ico" sizes="48x48">
   <link rel="icon" href="/icon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="/apple-touch-icon-180x180.png">
