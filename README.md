@@ -128,7 +128,7 @@ logins wait up to 15 minutes.
 
 ## On your phone
 
-Open `https://<site>/`, log in, then install it. **Download** at the top does it
+Open `https://<site>/`, log in, then install it. **Download** in the menu (☰, top right) does it
 in Chrome and Edge, and shows these steps elsewhere (it's hidden in the installed app):
 
 - **iPhone (Safari):** Share → **Add to Home Screen**. Do this: Safari deletes a
@@ -140,7 +140,7 @@ in Chrome and Edge, and shows these steps elsewhere (it's hidden in the installe
 **Offline** you can see your lists and add, tick, rename and delete tasks. The
 line at the bottom says how many changes are waiting; they're sent when you're
 back online and the app is open (it doesn't sync in the background). It syncs
-when opened, every 30 seconds while open, and when you press **Sync** at the top. Creating
+when opened, every 30 seconds while open, and when you press **Sync** in the menu. Creating
 lists, settings and logging out need a connection. If someone deleted a task you
 changed offline, your change is dropped and the app says so.
 

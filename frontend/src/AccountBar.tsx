@@ -1,16 +1,45 @@
-// Who is logged in, with "Sync" (send waiting changes and download the latest now; the result shows
-// in the status line), "Download" (install as an app), "Change password" and "Log out" (the logout
-// itself lives in App, so it survives the switch to the login screen when the session has expired).
-import { useState } from "react";
+// Who is logged in, and a menu (the burger button) with "Sync" (send waiting changes and download
+// the latest now; the result shows in the status line), "Download" (install as an app), "Change
+// password" and "Log out" (the logout itself lives in App, so it survives the switch to the login
+// screen when the session has expired). One button keeps the header on one line on any phone.
+import { useEffect, useRef, useState } from "react";
 import { ChangePassword } from "./ChangePassword";
 import { sync } from "./device";
 import { promptInstall, useInstall } from "./install";
 
 export function AccountBar({ username, onLogout }: { username: string; onLogout: () => void }) {
+  const [open, setOpen] = useState(false);
   const [changing, setChanging] = useState(false);
   const [steps, setSteps] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const install = useInstall();
+  const menu = useRef<HTMLDivElement>(null);
+  const toggleButton = useRef<HTMLButtonElement>(null);
+
+  // A tap outside the menu or Escape closes it.
+  useEffect(() => {
+    if (!open) return;
+    const outside = (event: PointerEvent) => {
+      if (!menu.current?.contains(event.target as Node)) setOpen(false);
+    };
+    const escape = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      setOpen(false);
+      toggleButton.current?.focus();
+    };
+    document.addEventListener("pointerdown", outside);
+    document.addEventListener("keydown", escape);
+    return () => {
+      document.removeEventListener("pointerdown", outside);
+      document.removeEventListener("keydown", escape);
+    };
+  }, [open]);
+
+  // Every item closes the menu first.
+  const pick = (action: () => void) => () => {
+    setOpen(false);
+    action();
+  };
 
   async function syncNow() {
     setSyncing(true);
@@ -27,10 +56,31 @@ export function AccountBar({ username, onLogout }: { username: string; onLogout:
     <>
       <div className="account">
         <span>{username}</span>
-        <button type="button" className="plain" onClick={syncNow} disabled={syncing}>Sync</button>
-        {install !== "installed" && <button type="button" className="plain" onClick={download}>Download</button>}
-        <button type="button" className="plain" onClick={() => setChanging(!changing)}>Change password</button>
-        <button type="button" className="plain" onClick={onLogout}>Log out</button>
+        <div className="menu" ref={menu}>
+          <button
+            type="button"
+            className="plain burger"
+            ref={toggleButton}
+            aria-label="Menu"
+            aria-expanded={open}
+            aria-controls="account-menu"
+            onClick={() => setOpen(!open)}
+          >
+            <svg viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+              <path d="M3 5h14M3 10h14M3 15h14" />
+            </svg>
+          </button>
+          {open && (
+            <div className="menu-items" id="account-menu">
+              <button type="button" className="plain" onClick={pick(() => void syncNow())} disabled={syncing}>
+                {syncing ? "Syncing…" : "Sync"}
+              </button>
+              {install !== "installed" && <button type="button" className="plain" onClick={pick(download)}>Download</button>}
+              <button type="button" className="plain" onClick={pick(() => setChanging(!changing))}>Change password</button>
+              <button type="button" className="plain" onClick={pick(onLogout)}>Log out</button>
+            </div>
+          )}
+        </div>
       </div>
       {steps && install !== "installed" && <InstallSteps onClose={() => setSteps(false)} />}
       {changing && <ChangePassword onDone={() => setChanging(false)} />}
