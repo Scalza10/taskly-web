@@ -1,12 +1,12 @@
-// One todo: tick it, click the title to rename (Enter or leaving the field saves, Escape cancels), × deletes.
+// One task: tick it, click the title to rename (Enter or leaving the field saves, Escape cancels), × deletes.
 import { useRef, useState, type FocusEvent, type KeyboardEvent } from "react";
-import { api, type Todo } from "./api";
-import type { Change } from "./TodoPage";
+import { api, type Task } from "./api";
+import type { Change } from "./ListsPage";
 
-export function TodoItem({ todo, change }: { todo: Todo; change: Change }) {
+export function TaskItem({ task, change }: { task: Task; change: Change }) {
   const [editing, setEditing] = useState(false);
   const cancelled = useRef(false);
-  const path = `/api/todos/${todo.id}`;
+  const path = `/api/tasks/${task.id}`;
 
   function onKeyDown(event: KeyboardEvent<HTMLInputElement>) {
     if (event.key === "Enter") event.currentTarget.blur();
@@ -23,14 +23,14 @@ export function TodoItem({ todo, change }: { todo: Todo; change: Change }) {
       return;
     }
     const newTitle = event.currentTarget.value.trim();
-    if (newTitle && newTitle !== todo.title) void change(() => api("PATCH", path, { title: newTitle }));
+    if (newTitle && newTitle !== task.title) void change(() => api("PATCH", path, { title: newTitle }));
   }
 
   return (
-    <li className={todo.done ? "done" : undefined}>
+    <li className={task.done ? "done" : undefined}>
       <input
         type="checkbox"
-        checked={todo.done}
+        checked={task.done}
         aria-label="done"
         onChange={(e) => {
           const done = e.target.checked;
@@ -42,24 +42,24 @@ export function TodoItem({ todo, change }: { todo: Todo; change: Change }) {
           <input
             className="title"
             aria-label="title"
-            defaultValue={todo.title}
+            defaultValue={task.title}
             maxLength={500}
             autoFocus
             onKeyDown={onKeyDown}
             onBlur={onBlur}
           />
         ) : (
-          <span className="title" onClick={() => setEditing(true)}>{todo.title}</span>
+          <span className="title" onClick={() => setEditing(true)}>{task.title}</span>
         )}
-        {(todo.created_by || todo.done_by) && (
+        {(task.created_by || task.done_by) && (
           <small className="by">
-            {[todo.created_by && `added by ${todo.created_by}`, todo.done_by && `done by ${todo.done_by}`]
+            {[task.created_by && `added by ${task.created_by}`, task.done_by && `done by ${task.done_by}`]
               .filter(Boolean)
               .join(" · ")}
           </small>
         )}
       </div>
-      <button className="delete" aria-label={`delete "${todo.title}"`} onClick={() => void change(() => api("DELETE", path))}>
+      <button className="delete" aria-label={`delete "${task.title}"`} onClick={() => void change(() => api("DELETE", path))}>
         ×
       </button>
     </li>

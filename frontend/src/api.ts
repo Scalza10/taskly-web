@@ -1,14 +1,11 @@
 // Talks to the FastAPI backend. JSON in and out; errors become ApiError with the HTTP status.
 
-export type Todo = {
-  id: number;
-  title: string;
-  done: boolean;
-  created_by: string | null;
-  done_by: string | null;
-  created_at: string;
-  updated_at: string;
+export type Task = {
+  id: string; list_id: string; title: string; done: boolean;
+  created_by: string | null; done_by: string | null; created_at: string; updated_at: string;
 };
+export type TaskList = { id: string; name: string; owner: string | null; role: "owner" | "member"; members: string[]; tasks: Task[] };
+export type Snapshot = { me: string; lists: TaskList[] };
 
 export type Me = { username: string };
 

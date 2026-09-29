@@ -4,7 +4,7 @@ import { api, type Me } from "./api";
 import { AccountBar } from "./AccountBar";
 import { Login } from "./Login";
 import { isLoggedOut } from "./messages";
-import { TodoPage } from "./TodoPage";
+import { ListsPage } from "./ListsPage";
 
 export function App() {
   const [user, setUser] = useState<string | null | undefined>(undefined);
@@ -23,7 +23,7 @@ export function App() {
   return (
     <>
       <AccountBar username={user} onLoggedOut={() => setUser(null)} />
-      <TodoPage onLoggedOut={() => setUser(null)} />
+      <ListsPage onLoggedOut={() => setUser(null)} />
     </>
   );
 }
