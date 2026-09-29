@@ -22,7 +22,8 @@ Then, in two terminals:
 npm --prefix frontend run dev                                                    # the page, port 5173
 ```
 
-Open <http://localhost:5173/>. Saving a file in `frontend/src` updates the page
+Open <http://localhost:5173/>. The page asks you to log in, so create yourself
+an account once (see [Accounts](#accounts)). Saving a file in `frontend/src` updates the page
 at once; `--reload` restarts the API when you save a Python file. Stop either
 with Ctrl+C. macOS or Linux: `.venv/bin/pip` and `.venv/bin/python`.
 
@@ -42,7 +43,8 @@ docker compose up -d --build
 ```
 
 Open <http://localhost:8001/>. The database is `./data/taskly.db` on your
-machine, mounted into the container.
+machine, mounted into the container. Create an account first
+(`docker compose exec app python -m taskly.admin add-user me`).
 
 **Tests:** `.venv\Scripts\python.exe -m pytest` for the API (under a second;
 each test gets its own database, so your local data is untouched) and
@@ -53,14 +55,47 @@ each test gets its own database, so your local data is untouched) and
 | Method and path | Body | Answer |
 |---|---|---|
 | `GET /health` | | `{"status": "ok"}`; also checks the database |
+| `POST /api/login` | `{"username", "password"}` | 204 and the session cookie; 401 if wrong; 429 after too many tries |
+| `POST /api/logout` | | 204; ends this device's session |
+| `GET /api/me` | | `{"username"}` |
+| `POST /api/me/password` | `{"current", "new"}` | 204; logs out your other devices. 403 if `current` is wrong, 422 if `new` is under 10 characters |
 | `GET /api/todos` | | Every todo, open ones first, then newest first |
 | `POST /api/todos` | `{"title": "Buy milk"}` | 201 and the new todo |
 | `PATCH /api/todos/{id}` | `{"title": ...}` and/or `{"done": true}` | The todo, or 404 |
 | `DELETE /api/todos/{id}` | | 204, or 404 |
 
-A todo is `{"id", "title", "done", "created_at", "updated_at"}`, times in UTC
+Every `/api` endpoint except login needs the session cookie (401 otherwise).
+Writes from another site (an `Origin` header that isn't this site) get 403.
+
+A todo is `{"id", "title", "done", "created_by", "done_by", "created_at",
+"updated_at"}` (`created_by` and `done_by` are usernames, or `null`), times in UTC
 (`2026-09-28T12:00:00Z`). Titles are trimmed and must be 1–500 characters (422
 otherwise). Interactive docs are at `/docs`.
+
+## Accounts
+
+There is no sign-up page: the admin creates every account. Hand passwords over
+in person, not through chat.
+
+On the VM, in `~/taskly` (`docker compose exec app python -m taskly.admin …`), or
+locally (`.venv\Scripts\python.exe -m taskly.admin …`):
+
+| To | Run |
+|---|---|
+| Create an account | `add-user maria`, then type the password twice, or press Enter to get a random one printed |
+| Set a new password (also logs them out everywhere) | `reset-password maria` |
+| Block someone (logs them out; their name stays on what they did) | `disable-user maria` |
+| Let them back in | `enable-user maria` |
+| Log someone out everywhere (a lost phone) | `revoke-sessions maria` |
+| See everyone | `list-users` |
+
+People can change their own password on the page; that also logs out their
+other devices. Logins last 90 days from the last time the device was used.
+After 10 wrong passwords for a name (or 30 from one address) in 15 minutes,
+logins wait a few minutes.
+
+**Locally:** create yourself an account once with
+`.venv\Scripts\python.exe -m taskly.admin add-user me`, then log in on the page.
 
 ## Layout
 
@@ -71,11 +106,19 @@ taskly/
   db.py         the SQLite connection and the schema migrations
   todos.py      the queries
   routes.py     the HTTP endpoints
+  deps.py       the per-request database connection
+  auth.py       the session cookie, the login check, the throttle, the cross-site guard
+  passwords.py  password hashing (scrypt)
+  users.py      the account queries
+  sessions.py   the login session queries
+  admin.py      python -m taskly.admin: create and manage accounts
   backup.py     python -m taskly.backup: copy the database to data/backups/
   migrate.py    python -m taskly.migrate: apply pending migrations
   static/       the built page (not in git)
 frontend/
   src/          the page: React + TypeScript (api.ts talks to the API)
+    Login.tsx, AccountBar.tsx, ChangePassword.tsx   the login screen, the bar with your name, the password form
+    messages.ts   the text shown for API errors
   vite.config.ts
 tests/
 scripts/deploy.ps1
@@ -193,24 +236,17 @@ before you deploy**, so you don't roll back the other person's changes.
 2. **Deploy** with `.\scripts\deploy.ps1`. The health check at the end fails
    this first time because Caddy doesn't know the site yet. Check the app itself
    on the VM with `curl localhost:8001/health`.
-3. **Add the site to Caddy, with a password.** The app has no login of its
-   own, so Caddy asks for one. Follow [Changing the password](#changing-the-password)
-   to make a hash, then add this block to `~/proxy/Caddyfile` and apply it as in
-   [Editing the Caddyfile](#editing-the-caddyfile):
+3. **Add the site to Caddy.** Add this block to `~/proxy/Caddyfile` and apply it
+   as in [Editing the Caddyfile](#editing-the-caddyfile):
 
    ```
    <site> {
-       @protected not path /health
-       basic_auth @protected {
-           taskly <the hash>
-       }
        reverse_proxy taskly:8000
    }
    ```
 
-   `/health` stays open so the deploy script can check it. Caddy gets the
-   certificate by itself within a minute.
-4. Open `https://<site>/` and log in as `taskly` with the password.
+   Caddy gets the certificate by itself within a minute.
+4. **Create the accounts** as in [Accounts](#accounts) and open `https://<site>/`.
 
 ### On the VM
 
@@ -225,10 +261,21 @@ command in `~/reels` acts on Reels instead.
 | See Caddy's logs | `cd ~/proxy && docker compose logs -f caddy` |
 | Change a setting | Edit `~/taskly/.env`, then `docker compose up -d` (a restart doesn't re-read it) |
 
-## Caddy: the address and the password
+### Moving from Caddy's password to accounts (once, when phase 1b ships)
+
+1. Deploy. Caddy still asks for its password, so for a few minutes people log in twice.
+2. Create everyone's account (see [Accounts](#accounts)).
+3. In `~/proxy/Caddyfile`, remove the `@protected` line and the `basic_auth { … }`
+   block from the site's block, leaving `reverse_proxy taskly:8000`. Validate and
+   reload as in [Editing the Caddyfile](#editing-the-caddyfile).
+4. In a private browser window, `https://<site>/` shows Taskly's own login and no
+   browser password prompt.
+
+## Caddy: the address
 
 Caddy runs in `~/proxy` and is **shared with Reels**: one Caddyfile, one
-container, every site. A mistake there can affect Reels too, so always
+container, every site. For Taskly it only does HTTPS and forwarding; the logins
+are the app's own (see [Accounts](#accounts)). A mistake there can affect Reels too, so always
 validate before reloading. A reload that fails changes nothing: Caddy keeps
 running the config it had, and both sites stay up.
 
@@ -260,48 +307,6 @@ inside the container, so each `caddy` command goes through Docker.
    docker run --rm -v ~/proxy/Caddyfile:/etc/caddy/Caddyfile caddy:2 caddy fmt --overwrite /etc/caddy/Caddyfile
    ```
 
-### Changing the password
-
-The Caddyfile holds a **hash** of the password, never the password itself.
-
-1. Make the hash (keep the single quotes, so `!` or `$` in the password
-   arrive as typed):
-
-   ```bash
-   docker compose exec caddy caddy hash-password --plaintext 'purple-lamp-river'
-   ```
-
-2. It prints one line starting with `$2a$14$`, about 60 characters. Paste the
-   whole line **with nano** in place of the old hash, after the user name:
-
-   ```
-   basic_auth @protected {
-       taskly $2a$14$...
-   }
-   ```
-
-   Don't paste it through `sed` or `echo "..."`: in double quotes the shell
-   reads `$2`, `$14` and so on as variables and silently cuts them out.
-3. Validate and reload as above. Everyone has to log in again with the new one.
-
-Easy to type is fine, but not a single word or `1234`: the site is public and
-Caddy doesn't limit login attempts. Three random words work well on a phone.
-
-### Adding or removing a login
-
-Each line in the `basic_auth` block is one user name and its hash. To give
-someone their own login (so it can be taken away without changing everyone's
-password), add a line with a new name and a hash made as above:
-
-```
-basic_auth @protected {
-    taskly $2a$14$...
-    maria  $2a$14$...
-}
-```
-
-To remove one, delete its line. Validate and reload either way.
-
 ### Changing the address
 
 1. Create the new DuckDNS subdomain, pointing at the same IP, and check it
@@ -311,18 +316,11 @@ To remove one, delete its line. Validate and reload either way.
 3. Change `Site` in every developer's `scripts\deploy.local.psd1`, or the
    deploy's health check waits on the old address.
 
-### Removing the password
-
-Only once the app has a login of its own: remove the `@protected` line and
-the `basic_auth` block, leaving `reverse_proxy taskly:8000`. Validate and
-reload.
-
 ### When something goes wrong
 
 | What you see | Why | Fix |
 |---|---|---|
 | `Error: no config file to load` on reload | `-w /etc/caddy` is missing | Use the commands in [Editing the Caddyfile](#editing-the-caddyfile) |
-| `base64-decoding password: illegal base64 data at input byte 1` | The value after the user name isn't a hash: a plain password, or a hash cut short or mangled by the shell | [Changing the password](#changing-the-password); paste with nano |
 | `WARN Caddyfile input is not formatted` | Uneven indentation | Harmless. Format it (step 3 above) if you like |
 | `caddy: command not found` | Caddy exists only inside the container | Prefix with `docker compose exec -w /etc/caddy caddy` |
 | Browser: `ERR_CONNECTION_CLOSED` | Caddy has no block for that name: the reload didn't happen or failed, or the name is misspelled | Validate, reload, check the logs |

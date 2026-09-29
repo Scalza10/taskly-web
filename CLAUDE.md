@@ -26,7 +26,8 @@ Node ≥ 22.12. No linter or formatter is configured.
 ## Architecture
 
 - **App factory.** `create_app(settings=None)` in `main.py` runs `db.migrate`, adds `routes.router`, and mounts `settings.static_dir` at `/` last (so API routes win; `html=True` serves `index.html`), only if that folder exists: without a build the API still runs. Tests pass their own `Settings`; `make_settings` points `static_dir` at an empty tmp folder. HTML answers get `Cache-Control: no-cache` (index.html names the build's hashed files).
-- **Database.** `db.py`: `connect()` sets `row_factory`, foreign keys and a busy timeout; `migrate()` sets WAL and applies `MIGRATIONS[user_version:]`, each as one `executescript` transaction that also bumps `PRAGMA user_version`. **Only append to `MIGRATIONS`; never edit or reorder a deployed one.** Each request gets its own connection (`routes.get_db` → `db.session`).
+- **Database.** `db.py`: `connect()` sets `row_factory`, foreign keys and a busy timeout; `migrate()` sets WAL and applies `MIGRATIONS[user_version:]`, each as one `executescript` transaction that also bumps `PRAGMA user_version`. **Only append to `MIGRATIONS`; never edit or reorder a deployed one.** Each request gets its own connection (`deps.get_db` → `db.session`).
+- **Accounts.** `passwords.py` (scrypt), `users.py` and `sessions.py` are plain queries; `auth.py` is the FastAPI side: the `taskly_session` cookie, `CurrentUser` (every `/api` route but login uses it), the login throttle (in memory, one process) and a middleware that refuses cross-site writes (`Origin` ≠ `scheme://host`), sets `Cache-Control: no-store` on `/api` and renews the cookie. Accounts are made with `python -m taskly.admin`; there is no sign-up. `deps.py` holds `get_db`/`Conn`. Endpoints return `None` with `status_code=` in the decorator, never a `Response` object: FastAPI drops cookies set on the injected `response` otherwise.
 - **Queries** live in `todos.py` and return plain dicts (`done` as a bool). Routes stay thin: validate with pydantic (`Title` strips and bounds length), call `todos`, map `None`/`False` to 404.
 - **Frontend** (`frontend/`). React + TypeScript, built by Vite into `taskly/static/` (gitignored; the Docker image builds it in a Node stage). `src/api.ts` is the only place that calls `fetch`; it throws `ApiError` with the server's `detail`. After every change the page reloads the list from the server rather than patching state. Keep all assets local: no CDNs or other sites. The dev server's proxy must not use `changeOrigin`.
 - **Settings** (`settings.py`) read the environment and `.env` in the working directory. So far `DB_PATH` and `STATIC_DIR` (the built page).
@@ -41,7 +42,7 @@ The VM runs one Caddy (`~/proxy`, owns 80/443) and several apps, each its own Co
 - **Data lives only in `./data` (mounted at `/data`).** Anything written elsewhere in the container is lost on the next deploy.
 - **The VM's IP and host name are never committed.** `deploy.ps1` reads them from `scripts/deploy.local.psd1` (gitignored; template `deploy.local.example.psd1`), handed over with the SSH key on a USB stick. Docs use `<site>` and `<vm-ip>`.
 - **`deploy.ps1` ships the last commit via `git archive`**, not the working tree. On the VM it builds, backs up (`python -m taskly.backup`), migrates (`python -m taskly.migrate`), then runs `docker compose up`. Backup and migrate run as `docker run --rm --network none … taskly-app`, never `docker compose run`: a compose one-off container joins `web` with alias `taskly` and could receive Caddy's traffic. It sets TLS 1.2 explicitly because Windows PowerShell 5.1 doesn't offer it by default.
-- **The site is behind Caddy's `basic_auth`** (the app has no login), except `/health`, which the deploy script checks. If the app gets its own login, remove that from the Caddyfile block. README "Caddy: the address and the password" is the how-to for passwords, logins, the address and Caddy errors; keep it current when giving Caddy instructions.
+- **The app does its own logins** (phase 1b). The site's Caddyfile block is only `reverse_proxy taskly:8000`; never add `basic_auth` back. README "Caddy: the address" is the how-to for the address and Caddy errors; keep it current when giving Caddy instructions.
 - **`/health` touches the database**, so a broken volume fails the deploy check instead of the first request.
 
 ## Things we learned
@@ -49,14 +50,13 @@ The VM runs one Caddy (`~/proxy`, owns 80/443) and several apps, each its own Co
 ### Caddy on the shared VM (found on the first deploy)
 - **`caddy` exists only inside the container.** Every Caddy command is `docker compose exec -w /etc/caddy caddy caddy <command>`, run in `~/proxy`. Without `-w /etc/caddy`, `reload` looks in the container's working directory `/srv` and fails with "no config file to load"; that is how the first reload silently never happened, and the browser showed `ERR_CONNECTION_CLOSED` (Caddy had no block for the name).
 - **Always `validate` before `reload`.** Caddy is shared with Reels. A failed reload is safe (Caddy keeps its running config), but a bad config that validates would hit both sites.
-- **`basic_auth` takes a bcrypt hash (`$2a$14$…`, ~60 chars), never the password.** A plain password or a truncated hash fails the reload with `base64-decoding password: illegal base64 data at input byte 1`. Make it with `caddy hash-password --plaintext '<pw>'` (single quotes).
-- **Never route a hash through `sed` or `echo "..."`**: in double quotes the shell expands `$2`, `$14`… and silently mangles it. Tell people to paste with `nano`.
 - **The Caddyfile is a read-only single-file bind mount.** `caddy fmt --overwrite` can't run in the service container; use `docker run --rm -v ~/proxy/Caddyfile:/etc/caddy/Caddyfile caddy:2 caddy fmt --overwrite /etc/caddy/Caddyfile`. An editor that replaces the file (new inode) leaves the container on the old copy until `docker compose up -d --force-recreate caddy`. `nano` writes in place. The "Caddyfile input is not formatted" warning is harmless.
 - **The real site name stays out of the repo** like the VM's IP: docs say `<site>`; it lives in `deploy.local.psd1` and `~/proxy/Caddyfile`.
 
 ### App
 - **On Windows, `mimetypes` can map `.js` to `text/plain`** from the registry, and browsers then refuse the module script. `main.py` forces `text/javascript`; `test_page_and_its_files_are_served` guards it.
 - **`Settings` reads `.env` from the working directory.** Tests build settings with `tests/conftest.py::make_settings(tmp_path)`, which passes `_env_file=None`. Use it.
+- **Tests log in.** The `client` fixture is logged in as `maria`; `anon` isn't. `fast_passwords` (autouse) lowers scrypt's cost; `test_passwords` checks the real one.
 
 ## Process
 
