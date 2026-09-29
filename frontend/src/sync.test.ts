@@ -51,7 +51,23 @@ test("sends JSON bodies", async () => {
   await createSync(store, fetchFn).request();
   expect(fetchFn).toHaveBeenCalledWith("/api/tasks/n1", {
     method: "PATCH", headers: { "Content-Type": "application/json" }, body: '{"done":true}',
+    signal: expect.any(AbortSignal),
   });
+});
+
+test("a request that hangs times out like a lost connection and keeps the queue", async () => {
+  const store = memoryStore();
+  await queued(store, tick);
+  const hangs = ((_path: RequestInfo | URL, init?: RequestInit) =>
+    new Promise<Response>((_resolve, reject) => {
+      init?.signal?.addEventListener("abort", () => reject(init.signal!.reason));
+    })) as unknown as typeof fetch;
+  const sync = createSync(store, hangs, 10);
+
+  await sync.request();
+
+  expect(sync.state.connection).toBe("offline");
+  expect(await store.queue()).toHaveLength(1);
 });
 
 test("a change to something gone is dropped with a note, and the rest still go", async () => {
@@ -90,6 +106,11 @@ test("losing the connection midway keeps the rest, in order, for next time", asy
   expect((await store.queue()).map((c) => c.path)).toEqual(["/api/tasks/n1", "/api/tasks/old"]);
   expect(sync.state.connection).toBe("offline");
   expect(await store.snapshot()).toBeUndefined();
+
+  const working = server();
+  await createSync(store, working.fetchFn).request();
+  expect(working.calls).toEqual(["PATCH /api/tasks/n1", "DELETE /api/tasks/old", "GET /api/sync"]);
+  expect(await store.queue()).toEqual([]);
 });
 
 test.each([429, 500, 503])("%i keeps the queue and says the server is in trouble", async (status) => {

@@ -18,24 +18,35 @@ export function App() {
   const [unsynced, setUnsynced] = useState(0);
   const [logoutError, setLogoutError] = useState<string | null>(null);
 
-  useEffect(() => {
-    void (async () => {
-      let stored;
-      try {
-        stored = await store.snapshot();
-      } catch {
-        return setScreen({ kind: "blocked" });
-      }
-      if (stored) return setScreen({ kind: "lists", me: stored.data.me });
-      try {
-        const me = await api<Me>("GET", "/api/me");
-        await prepareForUser(store, me.username);
-        setScreen({ kind: "lists", me: me.username });
-      } catch (e) {
-        setScreen(isLoggedOut(e) ? { kind: "login" } : { kind: "connect" });
-      }
-    })();
+  const start = useCallback(async () => {
+    let stored;
+    try {
+      stored = await store.snapshot();
+    } catch {
+      return setScreen({ kind: "blocked" });
+    }
+    if (stored) return setScreen({ kind: "lists", me: stored.data.me });
+    try {
+      const me = await api<Me>("GET", "/api/me");
+      await prepareForUser(store, me.username);
+      setScreen({ kind: "lists", me: me.username });
+    } catch (e) {
+      setScreen(isLoggedOut(e) ? { kind: "login" } : { kind: "connect" });
+    }
   }, []);
+
+  useEffect(() => {
+    void start();
+  }, [start]);
+
+  // An installed phone app has no reload button: retry when the network returns.
+  const connecting = screen.kind === "connect";
+  useEffect(() => {
+    if (!connecting) return;
+    const retry = () => void start();
+    window.addEventListener("online", retry);
+    return () => window.removeEventListener("online", retry);
+  }, [connecting, start]);
 
   // The session ended (expired, password changed elsewhere): log in again, keep unsent changes.
   const sessionLost = useCallback(() => setScreen({ kind: "login" }), []);
@@ -96,7 +107,13 @@ export function App() {
         </main>
       );
     case "connect":
-      return <main><h1>Taskly</h1><p className="hint">Connect to the internet once to log in.</p></main>;
+      return (
+        <main>
+          <h1>Taskly</h1>
+          <p className="hint">Connect to the internet once to log in.</p>
+          <button type="button" onClick={() => void start()}>Try again</button>
+        </main>
+      );
     case "login":
       return <>{logoutNotes}<Login onLoggedIn={loggedIn} /></>;
     case "lists":

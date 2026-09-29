@@ -28,8 +28,11 @@ interface Schema extends DBSchema {
 
 const CURRENT = "current";
 
-export function openStore(name = "taskly"): Store {
+// onTerminated: the browser closed the database under us (Chrome does when another window's
+// logout clears the site's data), so this page's copy can no longer be trusted.
+export function openStore(name = "taskly", options: { onTerminated?: () => void } = {}): Store {
   const db = openDB<Schema>(name, 1, {
+    terminated: options.onTerminated,
     upgrade(database) {
       database.createObjectStore("snapshot");
       database.createObjectStore("queue", { keyPath: "seq", autoIncrement: true });

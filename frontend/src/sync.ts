@@ -21,7 +21,14 @@ const NOTES: Record<number, string> = {
   422: "A change was refused by the server.",
 };
 
-export function createSync(store: Store, fetchFn: typeof fetch = (input, init) => fetch(input, init)): Sync {
+// A request that hangs would freeze syncing and logging out; a timeout counts as a network failure.
+const REQUEST_TIMEOUT_MS = 20_000;
+
+export function createSync(
+  store: Store,
+  fetchFn: typeof fetch = (input, init) => fetch(input, init),
+  timeoutMs = REQUEST_TIMEOUT_MS,
+): Sync {
   const state: SyncState = { connection: "online", loggedOut: false, notes: [] };
   const listeners = new Set<() => void>();
   let running: Promise<void> | null = null;
@@ -34,6 +41,7 @@ export function createSync(store: Store, fetchFn: typeof fetch = (input, init) =
         method,
         headers: body === undefined ? {} : { "Content-Type": "application/json" },
         body: body === undefined ? undefined : JSON.stringify(body),
+        signal: AbortSignal.timeout(timeoutMs),
       });
     } catch {
       return undefined;
@@ -84,7 +92,8 @@ export function createSync(store: Store, fetchFn: typeof fetch = (input, init) =
             again = false;
             try {
               await pass();
-            } catch {
+            } catch (error) {
+              console.warn("Sync failed", error); // the only trace on a phone
               // If the device fails (store or response.json), report trouble and keep going.
               // notify() still runs so listeners hear about it and request() always resolves.
               state.connection = "trouble";
