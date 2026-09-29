@@ -128,7 +128,8 @@ logins wait up to 15 minutes.
 
 ## On your phone
 
-Open `https://<site>/`, log in, then install it:
+Open `https://<site>/`, log in, then install it. **Download** at the top does it
+in Chrome and Edge, and shows these steps elsewhere (it's hidden in the installed app):
 
 - **iPhone (Safari):** Share → **Add to Home Screen**. Do this: Safari deletes a
   website's saved data after 7 days without a visit, but not an installed app's,

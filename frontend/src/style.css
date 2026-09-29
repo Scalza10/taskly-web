@@ -123,6 +123,7 @@ button:disabled { opacity: 0.6; cursor: default; }
   display: flex;
   align-items: center;
   justify-content: flex-end;
+  flex-wrap: wrap;
   gap: 4px;
   max-width: 560px;
   margin: 0 auto;
@@ -131,6 +132,9 @@ button:disabled { opacity: 0.6; cursor: default; }
   font-size: 14px;
 }
 .account span { margin-right: auto; }
+.account button { white-space: nowrap; }
+ul.steps { margin: 0; padding-left: 20px; list-style: disc; font-size: 14px; }
+ul.steps li { display: list-item; padding: 2px 0; margin: 0; border: 0; background: none; }
 .account-error { max-width: 560px; margin: 0 auto; padding: 0 16px; }
 .panel input { background: var(--bg); }
 
