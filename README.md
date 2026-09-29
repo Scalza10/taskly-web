@@ -139,7 +139,8 @@ in Chrome and Edge, and shows these steps elsewhere (it's hidden in the installe
 
 **Offline** you can see your lists and add, tick, rename and delete tasks. The
 line at the bottom says how many changes are waiting; they're sent when you're
-back online and the app is open (it doesn't sync in the background). Creating
+back online and the app is open (it doesn't sync in the background). It syncs
+when opened, every 30 seconds while open, and when you press **Sync** at the top. Creating
 lists, settings and logging out need a connection. If someone deleted a task you
 changed offline, your change is dropped and the app says so.
 

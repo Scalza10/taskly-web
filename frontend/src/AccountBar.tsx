@@ -1,13 +1,22 @@
-// Who is logged in, with "Download" (install as an app), "Change password" and "Log out" (the
-// logout itself lives in App, so it survives the switch to the login screen when the session has expired).
+// Who is logged in, with "Sync" (send waiting changes and download the latest now; the result shows
+// in the status line), "Download" (install as an app), "Change password" and "Log out" (the logout
+// itself lives in App, so it survives the switch to the login screen when the session has expired).
 import { useState } from "react";
 import { ChangePassword } from "./ChangePassword";
+import { sync } from "./device";
 import { promptInstall, useInstall } from "./install";
 
 export function AccountBar({ username, onLogout }: { username: string; onLogout: () => void }) {
   const [changing, setChanging] = useState(false);
   const [steps, setSteps] = useState(false);
+  const [syncing, setSyncing] = useState(false);
   const install = useInstall();
+
+  async function syncNow() {
+    setSyncing(true);
+    await sync.request(); // always resolves
+    setSyncing(false);
+  }
 
   function download() {
     if (install === "prompt") promptInstall().catch(() => setSteps(true));
@@ -18,6 +27,7 @@ export function AccountBar({ username, onLogout }: { username: string; onLogout:
     <>
       <div className="account">
         <span>{username}</span>
+        <button type="button" className="plain" onClick={syncNow} disabled={syncing}>Sync</button>
         {install !== "installed" && <button type="button" className="plain" onClick={download}>Download</button>}
         <button type="button" className="plain" onClick={() => setChanging(!changing)}>Change password</button>
         <button type="button" className="plain" onClick={onLogout}>Log out</button>
