@@ -16,3 +16,7 @@ class Settings(BaseSettings):
 
     # The built page. If the folder doesn't exist (no build yet), the API runs without a page.
     static_dir: str = str(PACKAGE_STATIC)
+
+    # FastAPI's /docs, /redoc and /openapi.json. Off on the VM: the site is public and /docs
+    # loads its viewer from a CDN. API_DOCS=true in a local .env turns them on.
+    api_docs: bool = False

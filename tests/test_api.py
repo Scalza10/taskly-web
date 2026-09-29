@@ -121,3 +121,12 @@ def test_todos_record_who_added_and_who_ticked(app, client, settings):
 def test_todos_need_a_login(anon):
     assert anon.get("/api/todos").status_code == 401
     assert anon.post("/api/todos", json={"title": "x"}).status_code == 401
+
+
+def test_api_docs_are_off_unless_asked_for(client, tmp_path):
+    # With Caddy's password gone they would be public, and /docs loads its viewer from a CDN.
+    for path in ["/docs", "/redoc", "/openapi.json"]:
+        assert client.get(path).status_code == 404
+    with TestClient(create_app(make_settings(tmp_path / "local", api_docs=True))) as local:
+        assert local.get("/docs").status_code == 200
+        assert local.get("/openapi.json").status_code == 200

@@ -27,7 +27,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     settings = settings or Settings()
     db.migrate(settings.db_path)
 
-    app = FastAPI(title="Taskly")
+    docs = settings.api_docs
+    app = FastAPI(title="Taskly", docs_url="/docs" if docs else None, redoc_url="/redoc" if docs else None,
+                  openapi_url="/openapi.json" if docs else None)
     app.state.settings = settings
     app.add_exception_handler(RequestValidationError, invalid_request)
     auth.install(app)

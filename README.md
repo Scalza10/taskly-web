@@ -70,7 +70,8 @@ Writes from another site (an `Origin` header that isn't this site) get 403.
 A todo is `{"id", "title", "done", "created_by", "done_by", "created_at",
 "updated_at"}` (`created_by` and `done_by` are usernames, or `null`), times in UTC
 (`2026-09-28T12:00:00Z`). Titles are trimmed and must be 1–500 characters (422
-otherwise). Interactive docs are at `/docs`.
+otherwise). Interactive docs are at `/docs` when `API_DOCS=true` is in `.env` (off by
+default, and on the VM: the site is public).
 
 ## Accounts
 
