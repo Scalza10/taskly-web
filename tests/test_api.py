@@ -97,3 +97,24 @@ def test_page_and_its_files_are_served(tmp_path):
 def test_api_runs_without_a_built_page(client):
     assert client.get("/health").json() == {"status": "ok"}
     assert client.get("/").status_code == 404
+
+
+def test_todos_record_who_added_and_who_ticked(app, client, settings):
+    todo = add(client, "Buy milk")
+    assert (todo["created_by"], todo["done_by"]) == ("maria", None)
+
+    add_user(settings, "tom")
+    with TestClient(app) as tom:
+        login(tom, "tom")
+        done = tom.patch(f"/api/todos/{todo['id']}", json={"done": True}).json()
+        assert (done["created_by"], done["done_by"]) == ("maria", "tom")
+        renamed = tom.patch(f"/api/todos/{todo['id']}", json={"title": "Buy oat milk"}).json()
+        assert renamed["done_by"] == "tom"
+
+    undone = client.patch(f"/api/todos/{todo['id']}", json={"done": False}).json()
+    assert undone["done_by"] is None
+
+
+def test_todos_need_a_login(anon):
+    assert anon.get("/api/todos").status_code == 401
+    assert anon.post("/api/todos", json={"title": "x"}).status_code == 401

@@ -2,7 +2,12 @@
 
 import sqlite3
 
-COLUMNS = "id, title, done, created_at, updated_at"
+# Authors by name, not id. Todos from before accounts have none.
+SELECT = """SELECT t.id, t.title, t.done, t.created_at, t.updated_at,
+                   c.username AS created_by, d.username AS done_by
+            FROM todos t
+            LEFT JOIN users c ON c.id = t.created_by
+            LEFT JOIN users d ON d.id = t.done_by"""
 
 
 def _to_dict(row: sqlite3.Row) -> dict:
@@ -13,29 +18,30 @@ def _to_dict(row: sqlite3.Row) -> dict:
 
 def list_todos(conn: sqlite3.Connection) -> list[dict]:
     # Open ones first, then newest first.
-    rows = conn.execute(f"SELECT {COLUMNS} FROM todos ORDER BY done, id DESC").fetchall()
+    rows = conn.execute(f"{SELECT} ORDER BY t.done, t.id DESC").fetchall()
     return [_to_dict(row) for row in rows]
 
 
 def get_todo(conn: sqlite3.Connection, todo_id: int) -> dict | None:
-    row = conn.execute(f"SELECT {COLUMNS} FROM todos WHERE id = ?", (todo_id,)).fetchone()
+    row = conn.execute(f"{SELECT} WHERE t.id = ?", (todo_id,)).fetchone()
     return _to_dict(row) if row else None
 
 
-def create_todo(conn: sqlite3.Connection, title: str) -> dict:
+def create_todo(conn: sqlite3.Connection, title: str, user_id: int) -> dict:
     with conn:
-        cursor = conn.execute("INSERT INTO todos (title) VALUES (?)", (title,))
+        cursor = conn.execute("INSERT INTO todos (title, created_by) VALUES (?, ?)", (title, user_id))
     return get_todo(conn, cursor.lastrowid)
 
 
-def update_todo(conn: sqlite3.Connection, todo_id: int, *, title: str | None = None,
+def update_todo(conn: sqlite3.Connection, todo_id: int, user_id: int, *, title: str | None = None,
                 done: bool | None = None) -> dict | None:
-    """Changes only the fields given. None if there is no such todo."""
+    """Changes only the fields given; ticking records who did it. None if there is no such todo."""
     changes = {}
     if title is not None:
         changes["title"] = title
     if done is not None:
         changes["done"] = int(done)
+        changes["done_by"] = user_id if done else None
     if changes:
         assignments = ", ".join(f"{column} = ?" for column in changes)
         with conn:
