@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-A small shared to-do list: FastAPI + SQLite (stdlib `sqlite3`, no ORM) + a React + TypeScript page (built by Vite), in one Docker container. It runs on the same VM as the Reels app (`C:\Project\ReelsTranslator`), behind that VM's shared Caddy. README.md covers running, the API, the database and deploying.
+A small shared to-do app with named lists: FastAPI + SQLite (stdlib `sqlite3`, no ORM) + a React + TypeScript page (built by Vite), in one Docker container. It runs on the same VM as the Reels app (`C:\Project\ReelsTranslator`), behind that VM's shared Caddy. README.md covers running, the API, the database and deploying.
 
 ## Commands
 
@@ -12,7 +12,7 @@ The dev machine is Windows; use the venv's interpreter.
 
 ```powershell
 .venv\Scripts\python.exe -m pytest                                   # API tests, under a second
-.venv\Scripts\python.exe -m pytest tests/test_api.py::test_delete    # one test
+.venv\Scripts\python.exe -m pytest tests/test_tasks.py::test_delete    # one test
 npm --prefix frontend test                                           # page logic tests (Vitest)
 npm --prefix frontend run build                                      # typecheck + build into taskly/static/
 .venv\Scripts\python.exe -m uvicorn taskly.main:create_app --factory --reload   # API on :8000, reads .env
@@ -29,8 +29,9 @@ Node ≥ 22.12. No linter or formatter is configured.
 - **App factory.** `create_app(settings=None)` in `main.py` runs `db.migrate`, adds `routes.router`, and mounts `settings.static_dir` at `/` last (so API routes win; `html=True` serves `index.html`), only if that folder exists: without a build the API still runs. Tests pass their own `Settings`; `make_settings` points `static_dir` at an empty tmp folder. HTML answers get `Cache-Control: no-cache` (index.html names the build's hashed files).
 - **Database.** `db.py`: `connect()` sets `row_factory`, foreign keys and a busy timeout; `migrate()` sets WAL and applies `MIGRATIONS[user_version:]`, each as one `executescript` transaction that also bumps `PRAGMA user_version`. **Only append to `MIGRATIONS`; never edit or reorder a deployed one.** Each request gets its own connection (`deps.get_db` → `db.session`).
 - **Accounts.** `passwords.py` (scrypt, at most 4 at once for memory), `users.py` and `sessions.py` are plain queries; `auth.py` is the FastAPI side: the `taskly_session` cookie, `CurrentUser` (every `/api` route but login and logout uses it), the login throttle (in memory, one process; checks and reserves each attempt under a lock, so parallel guesses can't pass the limit) and a middleware that refuses cross-site writes (`Origin` ≠ `scheme://host`), sets `Cache-Control: no-store` on `/api` and renews the cookie. Accounts are made with `python -m taskly.admin`; there is no sign-up. `deps.py` holds `get_db`/`Conn`. Endpoints return `None` with `status_code=` in the decorator, never a `Response` object: FastAPI drops cookies set on the injected `response` otherwise.
-- **Queries** live in `todos.py` and return plain dicts (`done` as a bool). Routes stay thin: validate with pydantic (`Title` strips and bounds length), call `todos`, map `None`/`False` to 404.
-- **Frontend** (`frontend/`). React + TypeScript, built by Vite into `taskly/static/` (gitignored; the Docker image builds it in a Node stage). `src/api.ts` is the only place that calls `fetch`; it throws `ApiError` with the server's `detail`. After every change the page reloads the list from the server rather than patching state. Keep all assets local: no CDNs or other sites. The dev server's proxy must not use `changeOrigin`.
+- **Queries** live in `users.py`, `sessions.py`, `lists.py`, `tasks.py` and `snapshot.py` and return plain dicts (`done` as a bool, people as usernames). Routes stay thin: validate with pydantic (`Title`, `ListName` strip and bound length; ids are `UUID`), check the role with `require_role`/`task_for` (none → 404, member doing an owner's action → 403), call the queries.
+- **Lists.** Every list has an owner, who is also a member row. `GET /api/sync` is the only read endpoint for lists and tasks. Task ids are UUIDs made by the page; `POST /api/tasks` with an existing id in the same list is a retry and answers 200 unchanged.
+- **Frontend** (`frontend/`). React + TypeScript, built by Vite into `taskly/static/` (gitignored; the Docker image builds it in a Node stage). `src/api.ts` is the only place that calls `fetch`; it throws `ApiError` with the server's `detail`. After every change the page reloads `/api/sync` rather than patching state. Keep all assets local: no CDNs or other sites. The dev server's proxy must not use `changeOrigin`.
 - **Settings** (`settings.py`) read the environment and `.env` in the working directory. So far `DB_PATH`, `STATIC_DIR` (the built page) and `API_DOCS` (FastAPI's `/docs`, `/redoc`, `/openapi.json`; off by default and on the VM, since the site is public).
 
 ## Deployment (shared VM)

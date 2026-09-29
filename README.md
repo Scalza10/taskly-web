@@ -1,6 +1,6 @@
 # Taskly
 
-A small shared to-do list: a FastAPI app with a SQLite database and a React +
+A small shared to-do app with named lists: a FastAPI app with a SQLite database and a React +
 TypeScript page. It runs in Docker on the same VM as Reels, behind the same
 Caddy, on its own host name.
 
@@ -59,19 +59,27 @@ each test gets its own database, so your local data is untouched) and
 | `POST /api/logout` | | 204; ends this device's session |
 | `GET /api/me` | | `{"username"}` |
 | `POST /api/me/password` | `{"current", "new"}` | 204; logs out your other devices. 403 if `current` is wrong, 422 if `new` is under 10 characters |
-| `GET /api/todos` | | Every todo, open ones first, then newest first |
-| `POST /api/todos` | `{"title": "Buy milk"}` | 201 and the new todo |
-| `PATCH /api/todos/{id}` | `{"title": ...}` and/or `{"done": true}` | The todo, or 404 |
-| `DELETE /api/todos/{id}` | | 204, or 404 |
+| `GET /api/sync` | | Everything you can see: `{"me", "lists": [{"id", "name", "owner", "role", "members", "tasks": [...]}]}`, lists by name, tasks open first then newest |
+| `POST /api/lists` | `{"name": "Groceries"}` | 201 and the list; you own it |
+| `PATCH /api/lists/{id}` | `{"name": ...}` | The list. Owner only |
+| `DELETE /api/lists/{id}` | | 204; its tasks go too. Owner only |
+| `POST /api/lists/{id}/members` | `{"username": "tom"}` | 201 (200 if already in). Owner only; 404 for unknown users |
+| `DELETE /api/lists/{id}/members/{username}` | | 204. The owner removes anyone; anyone can remove themselves (leave), except the owner (409) |
+| `POST /api/tasks` | `{"id": "<uuid>", "list_id": "<uuid>", "title": "Milk"}` | 201 and the task. The same `id` again in the same list: 200 and the stored task (a safe retry) |
+| `PATCH /api/tasks/{id}` | `{"title": ...}` and/or `{"done": true}` | The task |
+| `DELETE /api/tasks/{id}` | | 204 |
 
 Every `/api` endpoint except login needs the session cookie (401 otherwise).
 Writes from another site (an `Origin` header that isn't this site) get 403.
 
-A todo is `{"id", "title", "done", "created_by", "done_by", "created_at",
-"updated_at"}` (`created_by` and `done_by` are usernames, or `null`), times in UTC
-(`2026-09-28T12:00:00Z`). Titles are trimmed and must be 1–500 characters (422
-otherwise). Interactive docs are at `/docs` when `API_DOCS=true` is in `.env` (off by
-default, and on the VM: the site is public).
+A task is `{"id", "list_id", "title", "done", "created_by", "done_by",
+"created_at", "updated_at"}`: people by username (`null` for tasks from before
+accounts), times in UTC set by the server (`2026-09-28T12:00:00Z`). Task ids are
+UUIDs the page makes itself. Titles are trimmed and 1–500 characters, list names
+1–100 (422 otherwise). Anything in a list you're not in answers 404, as if it
+didn't exist; an owner's action by a member answers 403. Interactive docs are at
+`/docs` when `API_DOCS=true` is in `.env` (off by default, and on the VM: the
+site is public).
 
 ## Accounts
 
@@ -89,6 +97,8 @@ locally (`.venv\Scripts\python.exe -m taskly.admin …`):
 | Let them back in | `enable-user maria` |
 | Log someone out everywhere (a lost phone) | `revoke-sessions maria` |
 | See everyone | `list-users` |
+
+The first account created after phase 2 takes over the old list "Taskly" if it has no owner yet. Disabling someone hands each list they own to the member who joined it earliest.
 
 For example, to create an account on the VM:
 
@@ -115,15 +125,17 @@ logins wait up to 15 minutes.
 ```
 taskly/
   main.py       create_app(): runs the migrations, adds the routes, serves the built page
-  settings.py   Settings (DB_PATH, STATIC_DIR), read from the environment and .env
+  settings.py   Settings (DB_PATH, STATIC_DIR, API_DOCS), read from the environment and .env
   db.py         the SQLite connection and the schema migrations
-  todos.py      the queries
   routes.py     the HTTP endpoints
   deps.py       the per-request database connection
   auth.py       the session cookie, the login check, the throttle, the cross-site guard
   passwords.py  password hashing (scrypt)
   users.py      the account queries
   sessions.py   the login session queries
+  lists.py      lists and members: the queries
+  tasks.py      tasks: the queries
+  snapshot.py   what a user can see (GET /api/sync)
   admin.py      python -m taskly.admin: create and manage accounts
   backup.py     python -m taskly.backup: copy the database to data/backups/
   migrate.py    python -m taskly.migrate: apply pending migrations
@@ -131,6 +143,9 @@ taskly/
 frontend/
   src/          the page: React + TypeScript (api.ts talks to the API)
     Login.tsx, AccountBar.tsx, ChangePassword.tsx   the login screen, the bar with your name, the password form
+    ListsPage.tsx, ListPicker.tsx, NewList.tsx, ListSettings.tsx   the lists page: the picker, new list, members and rename/delete
+    Tasks.tsx, TaskItem.tsx   the open list's tasks
+    pickList.ts   which list is open
     messages.ts   the text shown for API errors
   vite.config.ts
 tests/
@@ -143,7 +158,7 @@ One SQLite file: `/data/taskly.db` in the container, which is
 `~/taskly/data/taskly.db` on the VM. Deploys back it up and apply new migrations to it, but never replace it.
 
 **Changing the schema:** append an SQL string to `MIGRATIONS` in `db.py`, for
-example `"ALTER TABLE todos ADD COLUMN due_date TEXT;"`. On startup the app runs
+example `"ALTER TABLE tasks ADD COLUMN due_date TEXT;"`. On startup the app runs
 every migration the file hasn't had yet (it tracks them in `PRAGMA
 user_version`), each in its own transaction. Never edit or reorder a migration
 that has been deployed: the VM's database already ran it and won't run it again.
