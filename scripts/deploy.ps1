@@ -67,8 +67,10 @@ try {
     #   docker-compose.yml; the prune removes only untagged images nothing uses: the one replaced.
     $steps = @(
         "mkdir -p ~/taskly", "cd ~/taskly",
-        # Single quotes: PowerShell must not expand $entry.
-        'tar -tzf ~/taskly.tar.gz | cut -d/ -f1 | sort -u | while IFS= read -r entry; do case "$entry" in ""|.|..|data|.env) ;; *) rm -rf -- "$entry" ;; esac; done',
+        # Single quotes: PowerShell must not expand $entry. No double quotes anywhere in these steps:
+        # Windows PowerShell 5.1 passes them to ssh unescaped and bash sees a broken command.
+        # (So $entry is unquoted: the repo's top-level names have no spaces or wildcards.)
+        'for entry in $(tar -tzf ~/taskly.tar.gz | cut -d/ -f1 | sort -u); do case $entry in data|.env) ;; *) rm -rf -- ./$entry ;; esac; done',
         "tar -xzf ~/taskly.tar.gz", "rm ~/taskly.tar.gz",
         "(docker network inspect web >/dev/null 2>&1 || docker network create web)",
         "docker compose build",
