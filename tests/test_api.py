@@ -85,6 +85,8 @@ def test_page_and_its_files_are_served(tmp_path):
         page = client.get("/")
         assert page.status_code == 200
         assert "<title>Taskly</title>" in page.text
+        assert page.headers["cache-control"] == "no-cache"
+        assert "cache-control" not in client.get("/assets/index-abc123.js").headers
         assert client.get("/assets/index-abc123.js").headers["content-type"].startswith("text/javascript")
         assert client.get("/assets/index-abc123.css").headers["content-type"].startswith("text/css")
 
