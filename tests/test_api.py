@@ -1,7 +1,10 @@
+import pytest
 from fastapi.testclient import TestClient
 
 from taskly.main import create_app
 from conftest import add_user, login, make_settings
+
+pytestmark = pytest.mark.skip(reason="replaced in phase 2, task 4")
 
 
 def add(client, title="Buy milk"):

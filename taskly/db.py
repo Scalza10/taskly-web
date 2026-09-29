@@ -39,6 +39,58 @@ MIGRATIONS = [
     ALTER TABLE todos ADD COLUMN created_by INTEGER REFERENCES users(id);
     ALTER TABLE todos ADD COLUMN done_by    INTEGER REFERENCES users(id);
     """,
+    # 3: named lists. The old single list becomes "Taskly" (only if it had todos), owned by
+    # the oldest active user, with every active user as a member; its todos become tasks.
+    # IDs are version-4 UUIDs; (random() & 3) picks the variant digit without abs() overflow.
+    """
+    CREATE TABLE lists (
+        id         TEXT    PRIMARY KEY,
+        name       TEXT    NOT NULL,
+        owner_id   INTEGER REFERENCES users(id),
+        created_at TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
+        updated_at TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+    );
+    CREATE TABLE list_members (
+        list_id   TEXT    NOT NULL REFERENCES lists(id) ON DELETE CASCADE,
+        user_id   INTEGER NOT NULL REFERENCES users(id),
+        joined_at TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
+        PRIMARY KEY (list_id, user_id)
+    );
+    CREATE INDEX list_members_user_id ON list_members(user_id);
+    CREATE TABLE tasks (
+        id         TEXT    PRIMARY KEY,
+        list_id    TEXT    NOT NULL REFERENCES lists(id) ON DELETE CASCADE,
+        title      TEXT    NOT NULL,
+        done       INTEGER NOT NULL DEFAULT 0,
+        created_by INTEGER REFERENCES users(id),
+        done_by    INTEGER REFERENCES users(id),
+        created_at TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
+        updated_at TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+    );
+    CREATE INDEX tasks_list_id ON tasks(list_id);
+
+    INSERT INTO lists (id, name, owner_id, created_at, updated_at)
+    SELECT lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4'
+           || substr(lower(hex(randomblob(2))), 2) || '-' || substr('89ab', 1 + (random() & 3), 1)
+           || substr(lower(hex(randomblob(2))), 2) || '-' || lower(hex(randomblob(6))),
+           'Taskly',
+           (SELECT MIN(id) FROM users WHERE disabled_at IS NULL),
+           (SELECT MIN(created_at) FROM todos),
+           (SELECT MAX(updated_at) FROM todos)
+    WHERE EXISTS (SELECT 1 FROM todos);
+
+    INSERT INTO list_members (list_id, user_id)
+    SELECT lists.id, users.id FROM lists, users WHERE users.disabled_at IS NULL;
+
+    INSERT INTO tasks (id, list_id, title, done, created_by, done_by, created_at, updated_at)
+    SELECT lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4'
+           || substr(lower(hex(randomblob(2))), 2) || '-' || substr('89ab', 1 + (random() & 3), 1)
+           || substr(lower(hex(randomblob(2))), 2) || '-' || lower(hex(randomblob(6))),
+           (SELECT id FROM lists), title, done, created_by, done_by, created_at, updated_at
+    FROM todos ORDER BY id;
+
+    DROP TABLE todos;
+    """,
 ]
 
 

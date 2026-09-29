@@ -14,13 +14,13 @@ def test_backup_is_a_full_copy(tmp_path):
     path = str(tmp_path / "taskly.db")
     db.migrate(path)
     with closing(sqlite3.connect(path)) as conn, conn:
-        conn.execute("INSERT INTO todos (title) VALUES ('keep me')")
+        conn.execute("INSERT INTO users (username, password_hash) VALUES ('keep me', 'x')")
 
     target = backup.backup(path, now=datetime(2026, 9, 28, 12, 0, 0, tzinfo=timezone.utc))
 
     assert target == tmp_path / "backups" / "taskly-20260928T120000Z.db"
     with closing(sqlite3.connect(target)) as copy:
-        assert copy.execute("SELECT title FROM todos").fetchall() == [("keep me",)]
+        assert copy.execute("SELECT username FROM users").fetchall() == [("keep me",)]
         assert copy.execute("PRAGMA user_version").fetchone()[0] == len(db.MIGRATIONS)
 
 
