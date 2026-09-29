@@ -160,3 +160,15 @@ test("listeners hear about every pass", async () => {
   await sync.request();
   expect(listener).toHaveBeenCalledTimes(1);
 });
+
+test("a store failure resolves with trouble and notifies listeners", async () => {
+  const store = { ...memoryStore(), queue: () => Promise.reject(new Error("IndexedDB lost")) };
+  const sync = createSync(store, server().fetchFn);
+  const listener = vi.fn();
+  sync.subscribe(listener);
+
+  await sync.request();
+
+  expect(sync.state.connection).toBe("trouble");
+  expect(listener).toHaveBeenCalledTimes(1);
+});

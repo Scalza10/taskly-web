@@ -82,7 +82,13 @@ export function createSync(store: Store, fetchFn: typeof fetch = (input, init) =
         try {
           do {
             again = false;
-            await pass();
+            try {
+              await pass();
+            } catch {
+              // If the device fails (store or response.json), report trouble and keep going.
+              // notify() still runs so listeners hear about it and request() always resolves.
+              state.connection = "trouble";
+            }
             notify();
           } while (again && !state.loggedOut);
         } finally {
