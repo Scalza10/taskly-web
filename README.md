@@ -150,7 +150,9 @@ that has been deployed: the VM's database already ran it and won't run it again.
 
 **Backups.** Every deploy copies the database to
 `~/taskly/data/backups/taskly-<UTC time>.db` before migrating, and keeps the
-newest 10. To make one by hand (safe while the app runs):
+newest 10. A backup taken right before a migration is named
+`taskly-<UTC time>-before-schema-<N>.db` and the rotation never deletes it;
+delete those by hand when you're sure you won't go back. To make one by hand (safe while the app runs):
 
 ```bash
 cd ~/taskly
