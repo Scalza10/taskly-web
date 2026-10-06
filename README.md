@@ -188,6 +188,9 @@ frontend/
   vite.config.ts   Vite and the PWA plugin (manifest and service worker)
 tests/
 scripts/deploy.ps1
+docs/
+  data-model.html   the database drawn, interactive; data-model.svg is its picture (above)
+  superpowers/      the design spec and the plan of each phase, as written at the time
 ```
 
 ## The database
@@ -195,11 +198,20 @@ scripts/deploy.ps1
 One SQLite file: `/data/taskly.db` in the container, which is
 `~/taskly/data/taskly.db` on the VM. Deploys back it up and apply new migrations to it, but never replace it.
 
+![The tables in taskly.db at schema 3: users, sessions, lists, list_members and tasks, and the columns that point from one to another](docs/data-model.svg)
+
+[`docs/data-model.html`](docs/data-model.html) is the same diagram, interactive (open it
+from a clone in a browser): select a table, column or line for its rules and the code that
+uses it, step through schema versions 1 to 3, and see what `/api/sync` sends and what the
+phone keeps in IndexedDB.
+
 **Changing the schema:** append an SQL string to `MIGRATIONS` in `db.py`, for
 example `"ALTER TABLE tasks ADD COLUMN due_date TEXT;"`. On startup the app runs
 every migration the file hasn't had yet (it tracks them in `PRAGMA
 user_version`), each in its own transaction. Never edit or reorder a migration
 that has been deployed: the VM's database already ran it and won't run it again.
+Then add the change to `MODEL` in `docs/data-model.html`, open that page, press
+**Copy the diagram as SVG** and save it over `docs/data-model.svg`.
 
 **Backups.** Every deploy copies the database to
 `~/taskly/data/backups/taskly-<UTC time>.db` before migrating, and keeps the

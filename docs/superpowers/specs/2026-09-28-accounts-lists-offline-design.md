@@ -63,6 +63,9 @@ Considered:
 
 ## Data model
 
+> This is the design as planned on 2026-09-28. The schema as built (with its indexes) is
+> drawn in `docs/data-model.html` and in README, "The database".
+
 Two migrations are appended to `MIGRATIONS` in `db.py`, one per phase. The
 existing migration 1 (`todos`) is not touched. Timestamps use the existing
 format, `strftime('%Y-%m-%dT%H:%M:%SZ', 'now')`, set by the server; `DEFAULT (...)`

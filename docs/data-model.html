@@ -1,0 +1,964 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Taskly data model</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans+Condensed:wght@500;600&family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;1,400&display=swap">
+<style>
+/* Layout: a header strip with the file's facts; the tables diagram beside a sticky details panel;
+   then how data reaches the phone, the rules the code keeps, and how to change the schema. */
+:root {
+  --bg: #eef1f4;
+  --surface: #ffffff;
+  --surface-2: #e2e8ee;
+  --ink: #16202b;
+  --muted: #586675;
+  --line: #c3cdd7;
+  --accent: #1f5fae;
+  --accent-soft: #dbe6f6;
+  --key: #8f5207;
+  --key-soft: #f4e4c8;
+  --cascade: #bf3a26;
+  --font-display: "IBM Plex Sans Condensed", "Arial Narrow", system-ui, sans-serif;
+  --font-body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0f141a; --surface: #161d25; --surface-2: #1f2933; --ink: #e3e9ef; --muted: #94a2b0;
+    --line: #34414e; --accent: #79aef0; --accent-soft: #1b2c42; --key: #e2b360; --key-soft: #3a2d15;
+    --cascade: #f07c66; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0f141a; --surface: #161d25; --surface-2: #1f2933; --ink: #e3e9ef; --muted: #94a2b0;
+  --line: #34414e; --accent: #79aef0; --accent-soft: #1b2c42; --key: #e2b360; --key-soft: #3a2d15;
+  --cascade: #f07c66; color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.55 var(--font-body); -webkit-font-smoothing: antialiased; }
+.page { max-width: 1520px; margin-inline: auto; padding-inline: clamp(16px, 3vw, 40px); padding-block: 32px 72px; display: grid; grid-template-columns: minmax(0, 1fr); gap: 56px; }
+h1, h2, h3 { font-family: var(--font-display); font-weight: 600; text-wrap: balance; margin: 0; }
+h1 { font-size: clamp(2.1rem, 1.5rem + 2.4vw, 3.1rem); line-height: 1.05; letter-spacing: -.01em; }
+h2 { font-size: 1.55rem; line-height: 1.2; }
+h3 { font-size: 1.2rem; line-height: 1.25; }
+p { margin: 0; }
+code { font-family: var(--font-mono); font-size: .88em; }
+button { font: inherit; color: inherit; }
+button:focus-visible, .src:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.eyebrow { font: 500 .72rem/1.3 var(--font-mono); letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+.lede { max-width: 64ch; color: var(--muted); font-size: 1.05rem; }
+
+/* Header */
+.top { display: grid; gap: 14px; }
+.facts { display: flex; flex-wrap: wrap; gap: 10px 32px; margin: 8px 0 0; padding: 16px 0 0; border-top: 1px solid var(--line); }
+.facts div { display: grid; gap: 2px; min-width: 0; }
+.facts dt { font: 500 .68rem var(--font-mono); letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+.facts dd { margin: 0; font-size: .92rem; overflow-wrap: anywhere; }
+
+/* Tables diagram and its panel */
+.er { display: grid; gap: 24px; grid-template-columns: minmax(0, 1fr); }
+@media (min-width: 1100px) { .er { grid-template-columns: minmax(0, 1fr) 360px; align-items: start; } }
+.er-main { display: grid; gap: 14px; min-width: 0; }
+.toolbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px 24px; }
+.versions { display: inline-flex; flex-wrap: wrap; gap: 2px; padding: 3px; border: 1px solid var(--line); border-radius: 9px; background: var(--surface); }
+.versions button { border: 0; border-radius: 6px; padding: 6px 12px; background: transparent; color: var(--muted); font-size: .85rem; font-weight: 500; cursor: pointer; }
+.versions button:hover { color: var(--ink); }
+.versions button[aria-pressed="true"] { background: var(--ink); color: var(--surface); }
+.version-note { color: var(--muted); max-width: 90ch; }
+.diagram { margin: 0; display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; min-width: 0; }
+.scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+#er svg { display: block; width: 100%; min-width: 760px; height: auto; }
+#er .tbl, #er .edge { cursor: pointer; outline: none; transition: opacity .15s; }
+#er svg.has-sel .tbl:not(.on), #er svg.has-sel .edge:not(.on) { opacity: .2; }
+#er .tbl:hover .t-outline, #er .tbl:focus-visible .t-outline { stroke: var(--accent); }
+#er .tbl:focus-visible .t-outline { stroke-width: 2.5; }
+#er .tbl.sel .t-outline { stroke: var(--accent); stroke-width: 2; }
+#er .col:hover .c-bg, #er .col.hl .c-bg { fill: var(--accent-soft); }
+#er .col.sel .c-bg { fill: var(--accent-soft); stroke: var(--accent); }
+#er .edge:hover .e-line, #er .edge:focus-visible .e-line, #er .edge.on .e-line { stroke-width: 2.5; }
+#er .edge.on:not(.e-cascade) .e-line, #er .edge.on:not(.e-cascade) .e-mark, #er .edge:focus-visible:not(.e-cascade) .e-line { stroke: var(--accent); }
+@media (prefers-reduced-motion: reduce) { #er .tbl, #er .edge { transition: none; } }
+
+.legend { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 8px 22px; font-size: .82rem; color: var(--muted); }
+.legend li { display: inline-flex; align-items: center; gap: 7px; }
+.legend svg { flex: none; }
+.sw-line { fill: none; stroke: var(--muted); stroke-width: 1.5; }
+.sw-dash { stroke-dasharray: 5 4; }
+.sw-cascade { stroke: var(--cascade); }
+.badge { display: inline-block; font: 600 .62rem/1.5 var(--font-mono); letter-spacing: .04em; padding: 0 4px; border-radius: 3px; }
+.badge.pk { background: var(--key-soft); color: var(--key); }
+.badge.fk { background: var(--accent-soft); color: var(--accent); }
+.badge.uq { box-shadow: inset 0 0 0 1px var(--line); color: var(--muted); }
+.nul { font: italic .78rem var(--font-mono); color: var(--muted); }
+
+.panel { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 20px 22px; display: grid; gap: 14px; align-content: start; min-width: 0; }
+@media (min-width: 1100px) { .panel { position: sticky; top: calc(env(safe-area-inset-top, 0px) + 16px); max-height: calc(100vh - 32px); overflow: auto; } }
+.panel .ph { display: grid; gap: 4px; }
+.panel h3 code { font-size: 1.05rem; }
+.panel h4 { margin: 6px 0 0; font: 500 .68rem var(--font-mono); letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+.panel .small { font-size: .88rem; }
+.back { justify-self: start; border: 0; background: none; padding: 0; color: var(--accent); font-size: .85rem; cursor: pointer; }
+.back:hover { text-decoration: underline; }
+.tlist, .refs, .cols { list-style: none; margin: 0; padding: 0; display: grid; }
+.tlist { gap: 8px; }
+.tlist button, .refs button { width: 100%; text-align: left; display: grid; gap: 1px; padding: 9px 12px; border: 1px solid var(--line); border-radius: 8px; background: transparent; cursor: pointer; }
+.tlist button:hover, .refs button:hover { border-color: var(--accent); }
+.tlist code { font-weight: 600; }
+.tlist span, .refs span { color: var(--muted); font-size: .84rem; }
+.refs { gap: 6px; }
+.refs button { font-size: .85rem; }
+.cols li { padding: 9px 0; border-top: 1px solid var(--line); display: grid; gap: 3px; }
+.cols li:last-child { border-bottom: 1px solid var(--line); }
+.cols li.sel { background: var(--accent-soft); margin-inline: -22px; padding-inline: 22px; }
+.col-head { display: flex; flex-wrap: wrap; gap: 4px 8px; align-items: center; }
+.col-head code { font-weight: 600; font-size: .92rem; }
+.sql { font: .74rem/1.45 var(--font-mono); color: var(--muted); overflow-wrap: anywhere; }
+.cols p { font-size: .87rem; }
+.rules-list { margin: 0; padding-left: 18px; font-size: .88rem; display: grid; gap: 6px; }
+.facts-sm { margin: 0; display: grid; gap: 10px; }
+.facts-sm dt { font: 500 .68rem var(--font-mono); letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+.facts-sm dd { margin: 2px 0 0; font-size: .9rem; }
+
+/* Server to phone */
+.section { display: grid; grid-template-columns: minmax(0, 1fr); gap: 18px; }
+.section-head { display: grid; gap: 8px; max-width: 78ch; }
+.section-head p { color: var(--muted); }
+.flow-svg { display: block; width: 100%; min-width: 640px; max-width: 1000px; height: auto; color: var(--muted); }
+.flow-svg .box { fill: var(--surface); stroke: var(--line); stroke-width: 1; }
+.flow-svg .box.key { stroke: var(--accent); stroke-width: 1.5; }
+.flow-svg .box-title { font: 600 13px var(--font-mono); fill: var(--ink); }
+.flow-svg .box-sub { font: 12px var(--font-body); fill: var(--muted); }
+.flow-svg .lane { font: 500 11px var(--font-mono); letter-spacing: .08em; fill: var(--muted); }
+.flow-svg .net { stroke: var(--line); stroke-width: 1.5; stroke-dasharray: 6 5; }
+.flow-svg .net-bg { fill: var(--bg); }
+.flow-svg .arrow { fill: none; stroke: currentColor; stroke-width: 1.5; }
+.flow-svg .a-label, .flow-svg .net-label { font: italic 12px var(--font-body); fill: var(--muted); }
+.flow figcaption { color: var(--muted); font-size: .9rem; max-width: 90ch; }
+.two { display: grid; gap: 20px; grid-template-columns: minmax(0, 1fr); }
+@media (min-width: 960px) { .two { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 20px 22px; display: grid; gap: 12px; align-content: start; min-width: 0; }
+.card .ph { display: grid; gap: 4px; }
+.json { display: grid; }
+.json .row { display: grid; grid-template-columns: minmax(0, 13.5em) minmax(0, 1fr); gap: 2px 16px; padding: 7px 0; border-top: 1px solid var(--line); align-items: baseline; }
+.json .k { font: .8rem/1.5 var(--font-mono); padding-left: calc(var(--d, 0) * 1.2em); overflow-wrap: anywhere; }
+.json .v { font-size: .86rem; color: var(--muted); }
+@media (max-width: 560px) { .json .row { grid-template-columns: minmax(0, 1fr); } }
+.src { font: .76rem/1.4 var(--font-mono); color: var(--accent); background: var(--accent-soft); border: 0; border-radius: 4px; padding: 0 5px; cursor: pointer; }
+.src:hover { text-decoration: underline; }
+.note { font-size: .86rem; color: var(--muted); }
+.stores { margin: 0; display: grid; gap: 12px; }
+.stores div { display: grid; gap: 3px; padding-top: 10px; border-top: 1px solid var(--line); }
+.stores dt code { font-weight: 600; font-size: .95rem; }
+.stores dd { margin: 0; font-size: .9rem; }
+.calls { margin: 6px 0 0; padding-left: 18px; display: grid; gap: 2px; font-size: .84rem; }
+
+/* Rules and changing */
+.rules { list-style: none; margin: 0; padding: 0; display: grid; gap: 14px 32px; grid-template-columns: minmax(0, 1fr); }
+@media (min-width: 900px) { .rules { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (min-width: 1300px) { .rules { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+.rules li { display: grid; gap: 4px; padding-top: 12px; border-top: 1px solid var(--line); font-size: .92rem; }
+.rules strong { font-family: var(--font-display); font-weight: 600; font-size: 1.02rem; }
+.steps { margin: 0; padding-left: 22px; display: grid; gap: 8px; max-width: 80ch; }
+.actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; }
+.btn { border: 1px solid var(--ink); background: var(--ink); color: var(--surface); border-radius: 8px; padding: 8px 14px; font-weight: 500; font-size: .9rem; cursor: pointer; }
+.btn:hover { background: var(--accent); border-color: var(--accent); }
+#copy-status { color: var(--muted); font-size: .88rem; }
+#svg-out { width: 100%; min-height: 160px; font: .75rem var(--font-mono); background: var(--surface); color: var(--ink); border: 1px solid var(--line); border-radius: 8px; padding: 10px; }
+.foot { color: var(--muted); font-size: .85rem; border-top: 1px solid var(--line); padding-top: 16px; }
+</style>
+</head>
+<body>
+<main class="page">
+
+<header class="top">
+  <p class="eyebrow">taskly/db.py · MIGRATIONS</p>
+  <h1>Taskly data model</h1>
+  <p class="lede">What the server keeps in its one SQLite file, how the tables point at each other, and what a phone keeps of it.</p>
+  <dl class="facts">
+    <div><dt>File</dt><dd><code>/data/taskly.db</code> (<code>~/taskly/data</code> on the VM)</dd></div>
+    <div><dt>Schema</dt><dd><code>PRAGMA user_version = 3</code></dd></div>
+    <div><dt>Journal</dt><dd><code>journal_mode = WAL</code></dd></div>
+    <div><dt>Foreign keys</dt><dd><code>ON</code>, set on every connection</dd></div>
+    <div><dt>Times</dt><dd><code>2026-09-28T12:00:00Z</code>: UTC text, set by SQLite</dd></div>
+  </dl>
+</header>
+
+<section class="er" id="tables" aria-labelledby="er-title">
+  <div class="er-main">
+    <div class="toolbar">
+      <h2 id="er-title">Tables</h2>
+      <div class="versions" role="group" aria-label="Schema version">
+        <button type="button" data-version="1" aria-pressed="false">1 · one list</button>
+        <button type="button" data-version="2" aria-pressed="false">2 · accounts</button>
+        <button type="button" data-version="3" aria-pressed="true">3 · named lists</button>
+      </div>
+    </div>
+    <p class="version-note" id="version-note"></p>
+    <figure class="diagram">
+      <div class="scroll"><div id="er"></div></div>
+      <figcaption>
+        <ul class="legend">
+          <li><span class="badge pk">PK</span>primary key</li>
+          <li><span class="badge fk">FK</span>points at another table</li>
+          <li><span class="badge uq">UQ</span>unique</li>
+          <li><span class="nul">null</span>may be empty</li>
+          <li><svg width="30" height="12" aria-hidden="true"><path class="sw-line" d="M0,6 H30"/></svg>required</li>
+          <li><svg width="30" height="12" aria-hidden="true"><path class="sw-line sw-dash" d="M0,6 H30"/></svg>optional (NULL allowed)</li>
+          <li><svg width="30" height="12" aria-hidden="true"><path class="sw-line sw-cascade" d="M0,6 H30"/></svg>deleted with the row it points to</li>
+          <li><svg width="38" height="16" aria-hidden="true"><path class="sw-line" d="M0,8 H38 M12,8 L0,1 M12,8 L0,15 M30,1 V15"/></svg>many to one</li>
+        </ul>
+      </figcaption>
+    </figure>
+  </div>
+  <aside class="panel" id="panel" aria-live="polite"></aside>
+</section>
+
+<section class="section" aria-labelledby="phone-title">
+  <div class="section-head">
+    <h2 id="phone-title">From the server to the phone</h2>
+    <p>The page draws from the phone's own copy, so it works offline. Task changes wait in a queue and go out in order; then the phone downloads everything it can see in one answer.</p>
+  </div>
+  <figure class="diagram flow">
+    <div class="scroll">
+      <svg class="flow-svg" viewBox="0 0 880 300" role="img" aria-label="Task changes go from the screen into the phone's queue, are sent to /api/tasks oldest first and written to taskly.db. GET /api/sync then reads taskly.db and the phone saves the answer as its snapshot. The screen shows the snapshot with the queue applied on top.">
+        <defs>
+          <marker id="flow-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M0,0 L10,5 L0,10 z" fill="currentColor"/>
+          </marker>
+        </defs>
+        <text class="lane" x="30" y="26">PHONE · INDEXEDDB "taskly"</text>
+        <rect class="box key" x="30" y="40" width="210" height="72" rx="8"/>
+        <text class="box-title" x="44" y="68">queue</text>
+        <text class="box-sub" x="44" y="90">task changes not sent yet</text>
+        <rect class="box" x="340" y="40" width="210" height="72" rx="8"/>
+        <text class="box-title" x="354" y="68">the screen</text>
+        <text class="box-sub" x="354" y="90">snapshot, queue on top</text>
+        <rect class="box" x="650" y="40" width="210" height="72" rx="8"/>
+        <text class="box-title" x="664" y="68">snapshot</text>
+        <text class="box-sub" x="664" y="90">the last /api/sync answer</text>
+
+        <path class="arrow" d="M340,60 H242" marker-end="url(#flow-arrow)"/>
+        <text class="a-label" x="290" y="52" text-anchor="middle">your edits</text>
+        <path class="arrow" d="M240,92 H338" marker-end="url(#flow-arrow)"/>
+        <text class="a-label" x="290" y="108" text-anchor="middle">drawn on top</text>
+        <path class="arrow" d="M650,76 H552" marker-end="url(#flow-arrow)"/>
+        <text class="a-label" x="600" y="68" text-anchor="middle">drawn from</text>
+
+        <line class="net" x1="20" y1="160" x2="860" y2="160"/>
+        <rect class="net-bg" x="368" y="150" width="154" height="20"/>
+        <text class="net-label" x="445" y="164" text-anchor="middle">network, may be offline</text>
+
+        <path class="arrow" d="M135,112 V204" marker-end="url(#flow-arrow)"/>
+        <text class="a-label" x="145" y="140">sent oldest first</text>
+        <path class="arrow" d="M755,206 V114" marker-end="url(#flow-arrow)"/>
+        <text class="a-label" x="745" y="140" text-anchor="end">then saved</text>
+
+        <text class="lane" x="30" y="194">SERVER · taskly.db</text>
+        <rect class="box" x="30" y="206" width="210" height="72" rx="8"/>
+        <text class="box-title" x="44" y="234">/api/tasks</text>
+        <text class="box-sub" x="44" y="256">POST · PATCH · DELETE</text>
+        <rect class="box" x="340" y="206" width="210" height="72" rx="8"/>
+        <text class="box-title" x="354" y="234">taskly.db</text>
+        <text class="box-sub" x="354" y="256">tasks, lists, members, users</text>
+        <rect class="box" x="650" y="206" width="210" height="72" rx="8"/>
+        <text class="box-title" x="664" y="234">GET /api/sync</text>
+        <text class="box-sub" x="664" y="256">everything you can see</text>
+
+        <path class="arrow" d="M240,242 H338" marker-end="url(#flow-arrow)"/>
+        <text class="a-label" x="290" y="234" text-anchor="middle">writes</text>
+        <path class="arrow" d="M550,242 H648" marker-end="url(#flow-arrow)"/>
+        <text class="a-label" x="600" y="234" text-anchor="middle">reads</text>
+      </svg>
+    </div>
+    <figcaption>Lists and members don't go through the queue: creating, renaming or deleting a list and changing its members call <code>/api/lists</code> directly and need a connection. A queued change the server can't apply (404, 409 or 422) is dropped with a note on the screen.</figcaption>
+  </figure>
+
+  <div class="two">
+    <article class="card">
+      <div class="ph">
+        <p class="eyebrow">taskly/snapshot.py</p>
+        <h3>What <code>GET /api/sync</code> sends</h3>
+      </div>
+      <p class="note">Each field and the column it comes from. Select a column to find it in the diagram.</p>
+      <div class="json">
+        <div class="row"><code class="k">"me": "maria"</code><p class="v"><button type="button" class="src" data-col="users.username">users.username</button> of the logged-in account</p></div>
+        <div class="row"><code class="k">"lists": [ … ]</code><p class="v">every list you have a <button type="button" class="src" data-col="list_members.user_id">list_members</button> row for, by name</p></div>
+        <div class="row" style="--d:1"><code class="k">"id", "name"</code><p class="v"><button type="button" class="src" data-col="lists.id">lists.id</button>, <button type="button" class="src" data-col="lists.name">lists.name</button></p></div>
+        <div class="row" style="--d:1"><code class="k">"owner"</code><p class="v"><button type="button" class="src" data-col="lists.owner_id">lists.owner_id</button> as a username; null if unowned</p></div>
+        <div class="row" style="--d:1"><code class="k">"role"</code><p class="v">"owner" if <button type="button" class="src" data-col="lists.owner_id">lists.owner_id</button> is you, else "member"</p></div>
+        <div class="row" style="--d:1"><code class="k">"members"</code><p class="v"><button type="button" class="src" data-col="list_members.user_id">list_members.user_id</button> as usernames, active accounts only</p></div>
+        <div class="row" style="--d:1"><code class="k">"tasks": [ … ]</code><p class="v">open ones first, then newest first</p></div>
+        <div class="row" style="--d:2"><code class="k">"id", "list_id", "title"</code><p class="v"><button type="button" class="src" data-col="tasks.id">tasks.id</button>, <button type="button" class="src" data-col="tasks.list_id">tasks.list_id</button>, <button type="button" class="src" data-col="tasks.title">tasks.title</button></p></div>
+        <div class="row" style="--d:2"><code class="k">"done"</code><p class="v"><button type="button" class="src" data-col="tasks.done">tasks.done</button>, 0 or 1 sent as false or true</p></div>
+        <div class="row" style="--d:2"><code class="k">"created_by", "done_by"</code><p class="v"><button type="button" class="src" data-col="tasks.created_by">tasks.created_by</button>, <button type="button" class="src" data-col="tasks.done_by">tasks.done_by</button> as usernames, or null</p></div>
+        <div class="row" style="--d:2"><code class="k">"created_at", "updated_at"</code><p class="v"><button type="button" class="src" data-col="tasks.created_at">tasks.created_at</button>, <button type="button" class="src" data-col="tasks.updated_at">tasks.updated_at</button></p></div>
+      </div>
+      <p class="note">Never sent: account ids, password hashes, sessions, <code>joined_at</code>, and the lists' own times.</p>
+    </article>
+
+    <article class="card">
+      <div class="ph">
+        <p class="eyebrow">frontend/src/store.ts</p>
+        <h3>What the phone keeps</h3>
+      </div>
+      <p>An IndexedDB database named <code>taskly</code>, version 1, with two stores:</p>
+      <dl class="stores">
+        <div>
+          <dt><code>snapshot</code></dt>
+          <dd>One entry, under the key <code>"current"</code>: <code>{ data, syncedAt }</code>, where <code>data</code> is the last <code>/api/sync</code> answer.</dd>
+        </div>
+        <div>
+          <dt><code>queue</code></dt>
+          <dd>Task changes not sent yet, keyed by <code>seq</code> (auto-increment, so they go out in the order they were made): <code>{ seq, method, path, body, queuedAt }</code>.
+            <ul class="calls">
+              <li><code>POST /api/tasks</code> with <code>{ id, list_id, title }</code></li>
+              <li><code>PATCH /api/tasks/{id}</code> with <code>{ title?, done? }</code></li>
+              <li><code>DELETE /api/tasks/{id}</code></li>
+            </ul>
+          </dd>
+        </div>
+      </dl>
+      <p class="note">A task with a change still waiting is marked <code>pending</code>; that flag exists only on the phone. <code>localStorage</code> holds <code>taskly.list</code> (the open list) and <code>taskly-theme</code> (light or dark, once chosen).</p>
+      <p class="note">Logging out clears all of it. Logging in as someone else clears both stores first.</p>
+    </article>
+  </div>
+</section>
+
+<section class="section" aria-labelledby="rules-title">
+  <div class="section-head">
+    <h2 id="rules-title">Kept by the code, not by SQLite</h2>
+    <p>The schema can't express these. The queries and routes keep them, and the tests check them.</p>
+  </div>
+  <ul class="rules">
+    <li><strong>The owner is a member too</strong><span>Creating a list also adds the owner's <code>list_members</code> row, so "which lists can I see" is one lookup. <code>lists.role()</code> relies on it.</span></li>
+    <li><strong>Accounts are disabled, never deleted</strong><span>Names stay on the tasks people added and ticked. A disabled account can't log in, can't be added to a list, and is left out of <code>members</code>.</span></li>
+    <li><strong>Lists change hands on disable</strong><span><code>disable-user</code> gives each list the account owns to the active member who joined earliest (<code>joined_at</code>). With nobody else, the list keeps its disabled owner.</span></li>
+    <li><strong>An unowned list gets claimed</strong><span>Only the old "Taskly" list can be unowned, if it was migrated before any account existed. The next <code>add-user</code> takes it (<code>lists.claim_unowned</code>).</span></li>
+    <li><strong>Who makes the ids</strong><span>The server makes list ids; the phone makes task ids, so a task can be created offline. The same task sent again to the same list is a retry: 200 and the stored task, unchanged.</span></li>
+    <li><strong>Ticking records who</strong><span>Setting <code>done</code> sets <code>done_by</code> to whoever ticked; unticking clears it. Every task change bumps the task's <code>updated_at</code>.</span></li>
+    <li><strong>Lengths</strong><span>Usernames are 2–32 letters, digits, <code>.</code>, <code>_</code> or <code>-</code>. List names are 1–100 characters and titles 1–500, trimmed. Passwords need at least 6.</span></li>
+    <li><strong>Sessions expire</strong><span>90 days after <code>last_used_at</code>, which is written at most once an hour. Expired rows are deleted at the next login, or when their cookie comes back.</span></li>
+    <li><strong>Foreign keys are on per connection</strong><span><code>db.connect()</code> runs <code>PRAGMA foreign_keys = ON</code>. SQLite leaves them off otherwise, and the cascades depend on them.</span></li>
+  </ul>
+</section>
+
+<section class="section" aria-labelledby="change-title">
+  <div class="section-head">
+    <h2 id="change-title">Changing the schema</h2>
+  </div>
+  <ol class="steps">
+    <li>Append an SQL string to <code>MIGRATIONS</code> in <code>taskly/db.py</code>. Never edit or reorder one that has been deployed: the VM's database already ran it and won't run it again.</li>
+    <li>Add the change to <code>MODEL</code> in this page (<code>docs/data-model.html</code>): a table, or a column with its <code>since</code>, and any reference.</li>
+    <li>Open this page in a browser, press <strong>Copy the diagram as SVG</strong> with the newest version selected, and save it over <code>docs/data-model.svg</code>, the picture in the README.</li>
+  </ol>
+  <div class="actions">
+    <button type="button" class="btn" id="copy-svg">Copy the diagram as SVG</button>
+    <span id="copy-status" role="status"></span>
+  </div>
+  <textarea id="svg-out" readonly hidden aria-label="The diagram as SVG"></textarea>
+</section>
+
+<footer class="foot">Drawn from <code>taskly/db.py</code> at schema 3, October 2026.</footer>
+</main>
+
+<script id="model">
+// The schema as data. The page and docs/data-model.svg are both drawn from it.
+// since/until: the schema versions (PRAGMA user_version) a table, column or reference exists in.
+const MODEL = {
+  version: 3,
+  canvas: { width: 1160, height: 700 },
+  versions: {
+    1: { text: "The first schema: one shared list in `todos`, no accounts (Caddy's password guarded the site)." },
+    2: { text: "Accounts (phase 1b) add `users` and `sessions`. `todos` gains `created_by` and `done_by`, empty for todos made before." },
+    3: { text: "Named lists (phase 2), the current schema, add `lists`, `list_members` and `tasks`. Existing todos became tasks in a list named \"Taskly\", owned by the oldest active account with every active account as a member, and `todos` was dropped." },
+  },
+  tables: [
+    {
+      id: "users", since: 2, x: 64, y: 170,
+      short: "accounts; disabled, never deleted",
+      about: "One row per person. The admin creates them with `python -m taskly.admin add-user`; there is no sign-up page.",
+      columns: [
+        { name: "id", sql: "INTEGER PRIMARY KEY AUTOINCREMENT", note: "AUTOINCREMENT: an id is never reused, so an old reference can't point at a newer account." },
+        { name: "username", sql: "TEXT NOT NULL UNIQUE COLLATE NOCASE", note: "Maria and maria are the same account. Shown as it was typed when created." },
+        { name: "password_hash", sql: "TEXT NOT NULL", note: "`scrypt$n$r$p$salt$hash`. Each hash carries its own cost, so the cost can rise without breaking old passwords." },
+        { name: "created_at", sql: "TEXT NOT NULL DEFAULT now" },
+        { name: "disabled_at", sql: "TEXT", note: "Set by `disable-user`, cleared by `enable-user`. While set, the account can't log in or be added to lists." },
+      ],
+      rules: [
+        "Usernames are 2–32 letters, digits, `.`, `_` or `-`; passwords need at least 6 characters.",
+        "`disable-user` hands the account's lists over and deletes its sessions.",
+      ],
+      code: "`users.py`, `admin.py`; joined for names in `sessions.py`, `snapshot.py` and `tasks.py`",
+    },
+    {
+      id: "sessions", since: 2, x: 64, y: 410,
+      short: "one per logged-in browser",
+      about: "One row per logged-in browser, found by the hash of its `taskly_session` cookie.",
+      columns: [
+        { name: "token_hash", sql: "TEXT PRIMARY KEY", note: "SHA-256 of the cookie's token. The token itself is never stored, so a copy of the file can't be used to log in." },
+        { name: "user_id", sql: "INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE" },
+        { name: "device", sql: "TEXT NOT NULL DEFAULT ''", note: "A label from the User-Agent, like \"Chrome on Android\"; empty if unknown." },
+        { name: "created_at", sql: "TEXT NOT NULL DEFAULT now" },
+        { name: "last_used_at", sql: "TEXT NOT NULL DEFAULT now", note: "Written at most once an hour. The session ends 90 days after it." },
+      ],
+      indexes: [{ name: "sessions_user_id", on: "user_id" }],
+      rules: [
+        "Expired rows are deleted at the next login, or when their cookie comes back.",
+        "Changing your password deletes your other sessions; `reset-password`, `disable-user` and `revoke-sessions` delete all of them.",
+      ],
+      code: "`sessions.py`; the cookie and \"log out everywhere\" in `auth.py`",
+    },
+    {
+      id: "list_members", since: 3, x: 444, y: 40,
+      short: "who can see which list",
+      about: "Who can see a list. The owner has a row here too.",
+      key: "Primary key: `(list_id, user_id)`, so an account is in a list at most once.",
+      columns: [
+        { name: "list_id", pk: true, sql: "TEXT NOT NULL REFERENCES lists(id) ON DELETE CASCADE" },
+        { name: "user_id", pk: true, sql: "INTEGER NOT NULL REFERENCES users(id)" },
+        { name: "joined_at", sql: "TEXT NOT NULL DEFAULT now", note: "Decides who inherits a list when its owner is disabled: the active member who joined earliest." },
+      ],
+      indexes: [{ name: "list_members_user_id", on: "user_id" }],
+      rules: [
+        "Only the owner adds members, and only active accounts can be added.",
+        "Anyone can remove themselves (leave) except the owner; the owner removes anyone.",
+      ],
+      code: "`lists.py`, `snapshot.py`",
+    },
+    {
+      id: "lists", since: 3, x: 824, y: 170,
+      short: "named lists, each with an owner",
+      about: "A named list of tasks. Its owner renames or deletes it and adds or removes members.",
+      columns: [
+        { name: "id", sql: "TEXT PRIMARY KEY", note: "A UUID made by the server." },
+        { name: "name", sql: "TEXT NOT NULL", note: "1–100 characters, trimmed. Lists are sorted by name, ignoring case." },
+        { name: "owner_id", sql: "INTEGER REFERENCES users(id)", note: "NULL only for the old \"Taskly\" list if it was migrated before any account existed." },
+        { name: "created_at", sql: "TEXT NOT NULL DEFAULT now" },
+        { name: "updated_at", sql: "TEXT NOT NULL DEFAULT now", note: "Bumped on rename and when ownership is handed over; task changes don't touch it." },
+      ],
+      rules: [
+        "Creating a list adds the owner's `list_members` row in the same transaction.",
+        "Deleting a list deletes its tasks and member rows. There is no trash.",
+      ],
+      code: "`lists.py`, `snapshot.py`",
+    },
+    {
+      id: "tasks", since: 3, x: 824, y: 410,
+      short: "the tasks, each in one list",
+      about: "One row per task. Any member of the list can add, edit, tick or delete them.",
+      columns: [
+        { name: "id", sql: "TEXT PRIMARY KEY", note: "A UUID made on the phone (`crypto.randomUUID()`), so a task can be created offline and the request retried safely." },
+        { name: "list_id", sql: "TEXT NOT NULL REFERENCES lists(id) ON DELETE CASCADE" },
+        { name: "title", sql: "TEXT NOT NULL", note: "1–500 characters, trimmed." },
+        { name: "done", sql: "INTEGER NOT NULL DEFAULT 0", note: "0 or 1; the API sends false or true." },
+        { name: "created_by", sql: "INTEGER REFERENCES users(id)", note: "Who added it. NULL for tasks from before accounts." },
+        { name: "done_by", sql: "INTEGER REFERENCES users(id)", note: "Who ticked it. Set when ticked, back to NULL when unticked." },
+        { name: "created_at", sql: "TEXT NOT NULL DEFAULT now", note: "Lists show open tasks first, then the newest." },
+        { name: "updated_at", sql: "TEXT NOT NULL DEFAULT now", note: "Bumped on every change." },
+      ],
+      indexes: [{ name: "tasks_list_id", on: "list_id" }],
+      rules: [
+        "The same id sent again to the same list is a retry: 200 and the stored task, unchanged. The same id in another list answers 409.",
+      ],
+      code: "`tasks.py`",
+    },
+    {
+      id: "todos", since: 1, until: 2, x: 824, y: 410,
+      short: "the one shared list, before named lists",
+      about: "The single shared list before named lists. Migration 3 copied its rows into `tasks` and dropped it; `db.py` still creates it, since migrations are only ever appended.",
+      columns: [
+        { name: "id", sql: "INTEGER PRIMARY KEY AUTOINCREMENT" },
+        { name: "title", sql: "TEXT NOT NULL" },
+        { name: "done", sql: "INTEGER NOT NULL DEFAULT 0" },
+        { name: "created_at", sql: "TEXT NOT NULL DEFAULT now" },
+        { name: "updated_at", sql: "TEXT NOT NULL DEFAULT now" },
+        { name: "created_by", since: 2, sql: "INTEGER REFERENCES users(id)", note: "Added by migration 2, empty for todos made before." },
+        { name: "done_by", since: 2, sql: "INTEGER REFERENCES users(id)", note: "Added by migration 2." },
+      ],
+      code: "migrations 1 to 3 in `db.py`",
+    },
+  ],
+  // from: the referencing column (many), to: the referenced key (one).
+  // sides: which side of each table the line leaves from. labelAt overrides the label's place.
+  edges: [
+    { id: "session-user", since: 2, from: ["sessions", "user_id"], to: ["users", "id"], sides: ["left", "left"], cascade: true,
+      label: "signed in as", labelAt: [50, 371, "start"],
+      card: "An account has any number of sessions, one per logged-in browser.",
+      onDelete: "CASCADE. Accounts are never deleted, though: logging out deletes the session row instead." },
+    { id: "member-user", since: 3, from: ["list_members", "user_id"], to: ["users", "id"], sides: ["left", "right"],
+      label: "member",
+      card: "An account can be a member of many lists.",
+      onDelete: "Nothing; accounts are never deleted. A disabled account keeps its rows but drops out of `members`." },
+    { id: "member-list", since: 3, from: ["list_members", "list_id"], to: ["lists", "id"], sides: ["right", "left"], cascade: true,
+      label: "in list",
+      card: "A list has one member row per member, the owner's included.",
+      onDelete: "CASCADE: deleting a list removes its member rows." },
+    { id: "list-owner", since: 3, from: ["lists", "owner_id"], to: ["users", "id"], sides: ["left", "right"], optional: true,
+      label: "owned by",
+      card: "Each list has one owner; an account can own many lists.",
+      onDelete: "Nothing; accounts are never deleted. Disabling the owner hands the list to the active member who joined earliest." },
+    { id: "task-list", since: 3, from: ["tasks", "list_id"], to: ["lists", "id"], sides: ["right", "right"], cascade: true,
+      label: "in list", labelAt: [1110, 371, "end"],
+      card: "A list has many tasks; every task is in exactly one list.",
+      onDelete: "CASCADE: deleting a list deletes its tasks." },
+    { id: "task-creator", since: 3, from: ["tasks", "created_by"], to: ["users", "id"], sides: ["left", "right"], optional: true,
+      label: "added by", labelT: 0.08,
+      card: "Who added the task. NULL for tasks from before accounts.",
+      onDelete: "Nothing; accounts are never deleted." },
+    { id: "task-ticker", since: 3, from: ["tasks", "done_by"], to: ["users", "id"], sides: ["left", "right"], optional: true,
+      label: "ticked by", labelT: 0.08,
+      card: "Who ticked the task. Set when ticked, back to NULL when unticked.",
+      onDelete: "Nothing; accounts are never deleted." },
+    { id: "todo-creator", since: 2, until: 2, from: ["todos", "created_by"], to: ["users", "id"], sides: ["left", "right"], optional: true,
+      label: "added by", labelT: 0.08,
+      card: "Who added the todo; empty for todos made before accounts.",
+      onDelete: "Nothing; accounts are never deleted." },
+    { id: "todo-ticker", since: 2, until: 2, from: ["todos", "done_by"], to: ["users", "id"], sides: ["left", "right"], optional: true,
+      label: "ticked by", labelT: 0.08,
+      card: "Who ticked the todo.",
+      onDelete: "Nothing; accounts are never deleted." },
+  ],
+};
+
+const GEO = { W: 272, HEAD: 38, ROW: 24, PAD: 6, FOOT: 22 };
+
+const DIAGRAM_CSS = `
+.t-fill { fill: var(--surface); }
+.t-head { fill: var(--surface-2); }
+.t-outline { fill: none; stroke: var(--line); stroke-width: 1; }
+.t-rule { stroke: var(--line); stroke-width: 1; }
+.t-name { font: 600 15px var(--font-body); fill: var(--ink); }
+.t-since { font: 500 10.5px var(--font-mono); fill: var(--muted); letter-spacing: .04em; }
+.c-bg { fill: transparent; }
+.c-name { font: 12.5px var(--font-mono); fill: var(--ink); }
+.c-type { font: 11.5px var(--font-mono); fill: var(--muted); }
+.c-null { font-style: italic; }
+.b-text { font: 600 9.5px var(--font-mono); letter-spacing: .04em; }
+.b-pk .b-rect { fill: var(--key-soft); }
+.b-pk .b-text { fill: var(--key); }
+.b-fk .b-rect { fill: var(--accent-soft); }
+.b-fk .b-text { fill: var(--accent); }
+.b-uq .b-rect { fill: transparent; stroke: var(--line); }
+.b-uq .b-text { fill: var(--muted); }
+.t-index { font: 11px var(--font-mono); fill: var(--muted); }
+.e-line, .e-mark { fill: none; stroke: var(--muted); stroke-width: 1.5; }
+.e-optional .e-line { stroke-dasharray: 5 4; }
+.e-cascade .e-line, .e-cascade .e-mark { stroke: var(--cascade); }
+.e-hit { fill: none; stroke: transparent; stroke-width: 14; }
+.e-label-bg { fill: var(--bg); }
+.e-label { font: italic 12px var(--font-body); fill: var(--muted); }
+.e-cascade .e-label { fill: var(--cascade); }
+.sa-bg { fill: var(--bg); }
+.sa-title { font: 600 22px var(--font-body); fill: var(--ink); }
+.sa-sub { font: 12px var(--font-mono); fill: var(--muted); }
+.sa-legend { font: 12px var(--font-body); fill: var(--muted); }
+`;
+
+// Colors for the SVG file on its own (the README), light and dark.
+const STANDALONE_CSS = `
+svg.er-svg {
+  --bg: #eef1f4; --surface: #ffffff; --surface-2: #e2e8ee; --ink: #16202b; --muted: #586675; --line: #c3cdd7;
+  --accent: #1f5fae; --accent-soft: #dbe6f6; --key: #8f5207; --key-soft: #f4e4c8; --cascade: #bf3a26;
+  --font-body: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+}
+@media (prefers-color-scheme: dark) {
+  svg.er-svg {
+    --bg: #161d25; --surface: #1c242e; --surface-2: #26313c; --ink: #e3e9ef; --muted: #94a2b0; --line: #3a4754;
+    --accent: #79aef0; --accent-soft: #1d2f47; --key: #e2b360; --key-soft: #3d3017; --cascade: #f07c66;
+  }
+}
+`;
+
+function esc(text) {
+  return String(text).replace(/[&<>"]/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[ch]);
+}
+
+// Text with `code` spans, escaped.
+function md(text) {
+  return esc(text).replace(/`([^`]+)`/g, "<code>$1</code>");
+}
+
+const num = (n) => Math.round(n * 10) / 10;
+const inVersion = (item, v) => item.since <= v && (item.until ?? Infinity) >= v;
+const visibleTables = (v) => MODEL.tables.filter((t) => inVersion(t, v));
+const visibleColumns = (t, v) => t.columns.filter((c) => (c.since ?? t.since) <= v);
+const tableOf = (id, v) => visibleTables(v).find((t) => t.id === id);
+
+function visibleEdges(v) {
+  return MODEL.edges.filter((e) => inVersion(e, v) && tableOf(e.from[0], v) && tableOf(e.to[0], v));
+}
+
+function columnFlags(c) {
+  return {
+    type: c.sql.split(" ")[0],
+    pk: Boolean(c.pk) || c.sql.includes("PRIMARY KEY"),
+    fk: c.sql.includes("REFERENCES"),
+    unique: c.sql.includes("UNIQUE"),
+    nullable: !c.pk && !c.sql.includes("NOT NULL") && !c.sql.includes("PRIMARY KEY"),
+  };
+}
+
+function badges(c) {
+  const f = columnFlags(c);
+  return [f.pk && "PK", f.fk && "FK", f.unique && "UQ"].filter(Boolean);
+}
+
+function tableHeight(t, v) {
+  return GEO.HEAD + visibleColumns(t, v).length * GEO.ROW + GEO.PAD + (t.indexes ? GEO.FOOT : 0);
+}
+
+function rowY(t, column, v) {
+  return t.y + GEO.HEAD + visibleColumns(t, v).findIndex((c) => c.name === column) * GEO.ROW + GEO.ROW / 2;
+}
+
+function sinceLabel(t) {
+  return t.until ? `schema ${t.since}–${t.until}` : `since schema ${t.since}`;
+}
+
+function tableSvg(t, v, standalone) {
+  const { W, HEAD, ROW, PAD } = GEO;
+  const { x, y } = t;
+  const cols = visibleColumns(t, v);
+  const h = tableHeight(t, v);
+  const attrs = standalone ? "" : ` tabindex="0" role="button" aria-label="${t.id} table"`;
+  const s = [`<g class="tbl" data-table="${t.id}"${attrs}>`];
+  s.push(`<rect class="t-fill" x="${x}" y="${y}" width="${W}" height="${h}" rx="8"/>`);
+  s.push(`<path class="t-head" d="M${x},${y + HEAD} V${y + 8} Q${x},${y} ${x + 8},${y} H${x + W - 8} Q${x + W},${y} ${x + W},${y + 8} V${y + HEAD} Z"/>`);
+  s.push(`<line class="t-rule" x1="${x}" y1="${y + HEAD}" x2="${x + W}" y2="${y + HEAD}"/>`);
+  s.push(`<text class="t-name" x="${x + 14}" y="${y + 25}">${t.id}</text>`);
+  s.push(`<text class="t-since" x="${x + W - 14}" y="${y + 24}" text-anchor="end">${sinceLabel(t)}</text>`);
+  cols.forEach((c, i) => {
+    const top = y + HEAD + i * ROW;
+    const mid = top + ROW / 2;
+    const f = columnFlags(c);
+    s.push(`<g class="col" data-col="${t.id}.${c.name}">`);
+    s.push(`<rect class="c-bg" x="${x + 1}" y="${top}" width="${W - 2}" height="${ROW}"/>`);
+    badges(c).forEach((b, k) => {
+      const bx = x + 12 + k * 25;
+      s.push(`<g class="b-${b.toLowerCase()}"><rect class="b-rect" x="${bx}" y="${mid - 7}" width="22" height="14" rx="3"/>`
+        + `<text class="b-text" x="${bx + 11}" y="${mid + 3.5}" text-anchor="middle">${b}</text></g>`);
+    });
+    s.push(`<text class="c-name" x="${x + 68}" y="${mid + 4.5}">${c.name}</text>`);
+    s.push(`<text class="c-type" x="${x + W - 14}" y="${mid + 4}" text-anchor="end">${f.type}${f.nullable ? '<tspan class="c-null"> null</tspan>' : ""}</text>`);
+    s.push(`</g>`);
+  });
+  if (t.indexes) {
+    const fy = y + HEAD + cols.length * ROW + PAD;
+    s.push(`<line class="t-rule" x1="${x}" y1="${fy}" x2="${x + W}" y2="${fy}"/>`);
+    s.push(`<text class="t-index" x="${x + 14}" y="${fy + 15}">${t.indexes.map((i) => `index ${i.name} (${i.on})`).join(", ")}</text>`);
+  }
+  s.push(`<rect class="t-outline" x="${x}" y="${y}" width="${W}" height="${h}" rx="8"/>`);
+  s.push(`</g>`);
+  return s.join("");
+}
+
+function edgeGeometry(e, v) {
+  const a = tableOf(e.from[0], v);
+  const b = tableOf(e.to[0], v);
+  const side = (t, s) => (s === "left" ? t.x : t.x + GEO.W);
+  const x1 = side(a, e.sides[0]), y1 = rowY(a, e.from[1], v), d1 = e.sides[0] === "left" ? -1 : 1;
+  const x2 = side(b, e.sides[1]), y2 = rowY(b, e.to[1], v), d2 = e.sides[1] === "left" ? -1 : 1;
+  const reach = e.sides[0] === e.sides[1] ? 36 : Math.max(50, Math.abs(x2 - x1) / 2);
+  return { p: [[x1, y1], [x1 + d1 * reach, y1], [x2 + d2 * reach, y2], [x2, y2]], d1, d2 };
+}
+
+function bezierAt(p, t) {
+  const u = 1 - t;
+  return [0, 1].map((k) => u * u * u * p[0][k] + 3 * u * u * t * p[1][k] + 3 * u * t * t * p[2][k] + t * t * t * p[3][k]);
+}
+
+function edgeSvg(e, v, standalone) {
+  const { p, d1, d2 } = edgeGeometry(e, v);
+  const [[x1, y1], c1, c2, [x2, y2]] = p;
+  const d = `M${x1},${y1} C${num(c1[0])},${c1[1]} ${num(c2[0])},${c2[1]} ${x2},${y2}`;
+  const cls = ["edge", e.optional && "e-optional", e.cascade && "e-cascade"].filter(Boolean).join(" ");
+  const attrs = standalone ? "" : ` tabindex="0" role="button" aria-label="${e.from.join(".")} points at ${e.to.join(".")}: ${e.label}"`;
+  // Many: a crow's foot at the referencing column. One: a bar at the referenced key.
+  const fx = x1 + d1 * 14;
+  const bx = x2 + d2 * 9;
+  const marks = `M${fx},${y1} L${x1},${y1 - 7} M${fx},${y1} L${x1},${y1 + 7} M${bx},${y2 - 7} L${bx},${y2 + 7}`;
+  const [lx, ly, anchor] = e.labelAt ?? [...bezierAt(p, e.labelT ?? 0.5).map(num), "middle"];
+  const w = num(e.label.length * 6.4 + 12);
+  const left = anchor === "middle" ? lx - w / 2 : anchor === "end" ? lx - w + 6 : lx - 6;
+  return `<g class="${cls}" data-edge="${e.id}"${attrs}>`
+    + `<path class="e-hit" d="${d}"/><path class="e-line" d="${d}"/><path class="e-mark" d="${marks}"/>`
+    + `<rect class="e-label-bg" x="${num(left)}" y="${num(ly - 9)}" width="${w}" height="18" rx="4"/>`
+    + `<text class="e-label" x="${lx}" y="${num(ly + 4)}" text-anchor="${anchor}">${e.label}</text></g>`;
+}
+
+function legendSvg(y) {
+  const y2 = y + 26;
+  const badge = (x, kind, label) => `<g class="b-${kind.toLowerCase()}"><rect class="b-rect" x="${x}" y="${y - 7}" width="22" height="14" rx="3"/>`
+    + `<text class="b-text" x="${x + 11}" y="${y + 3.5}" text-anchor="middle">${kind}</text></g>`
+    + `<text class="sa-legend" x="${x + 30}" y="${y + 4}">${label}</text>`;
+  const line = (x, cls, label) => `<g class="${cls}"><path class="e-line" d="M${x},${y2} H${x + 30}"/></g>`
+    + `<text class="sa-legend" x="${x + 38}" y="${y2 + 4}">${label}</text>`;
+  return [
+    badge(64, "PK", "primary key"),
+    badge(190, "FK", "points at another table"),
+    badge(380, "UQ", "unique"),
+    `<text class="sa-legend" x="470" y="${y + 4}"><tspan class="c-type c-null">null</tspan> may be empty</text>`,
+    line(64, "edge", "required"),
+    line(170, "edge e-optional", "optional (NULL allowed)"),
+    line(380, "edge e-cascade", "deleted with the row it points to"),
+    `<path class="e-mark" d="M640,${y2} H676 M652,${y2} L640,${y2 - 7} M652,${y2} L640,${y2 + 7} M668,${y2 - 7} V${y2 + 7}"/>`
+      + `<text class="sa-legend" x="686" y="${y2 + 4}">many to one</text>`,
+  ].join("");
+}
+
+function describeVersion(v) {
+  const names = visibleTables(v).map((t) => t.id).join(", ");
+  return `Taskly's SQLite tables at schema ${v}: ${names}, and the columns that point from one to another.`;
+}
+
+// The tables diagram as SVG text. standalone: with its own colors, title and legend, for docs/data-model.svg.
+function renderER(v, { standalone = false } = {}) {
+  const { width, height } = MODEL.canvas;
+  const role = standalone
+    ? `role="img" aria-label="${esc(describeVersion(v))}"`
+    : `role="group" aria-label="Tables at schema ${v}. Select a table, a column or a line for details."`;
+  const out = [`<svg xmlns="http://www.w3.org/2000/svg" class="er-svg" viewBox="0 0 ${width} ${height}" ${role}>`];
+  if (standalone) {
+    out.push(`<title>Taskly data model, schema ${v}</title>`);
+    out.push(`<style>${STANDALONE_CSS}${DIAGRAM_CSS}</style>`);
+    out.push(`<rect class="sa-bg" width="${width}" height="${height}" rx="12"/>`);
+    out.push(`<text class="sa-title" x="64" y="74">Taskly data model</text>`);
+    out.push(`<text class="sa-sub" x="64" y="98">taskly.db · schema ${v}</text>`);
+    out.push(`<text class="sa-sub" x="64" y="118">details: docs/data-model.html</text>`);
+  }
+  for (const e of visibleEdges(v)) out.push(edgeSvg(e, v, standalone));
+  for (const t of visibleTables(v)) out.push(tableSvg(t, v, standalone));
+  if (standalone) out.push(legendSvg(642));
+  out.push(`</svg>`);
+  return out.join("\n");
+}
+</script>
+
+<script>
+(() => {
+  const er = document.getElementById("er");
+  const panel = document.getElementById("panel");
+  const versionNote = document.getElementById("version-note");
+  const versionButtons = [...document.querySelectorAll("[data-version]")];
+  const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  const style = document.createElement("style");
+  style.textContent = DIAGRAM_CSS;
+  document.head.appendChild(style);
+
+  let version = MODEL.version;
+  let selection = null; // { kind: "table" | "column" | "edge", table?, column?, edge? }
+
+  const words = ["No tables", "One table", "Two tables", "Three tables", "Four tables", "Five tables", "Six tables"];
+
+  function draw() {
+    er.innerHTML = renderER(version);
+    for (const b of versionButtons) b.setAttribute("aria-pressed", String(Number(b.dataset.version) === version));
+    versionNote.innerHTML = md(MODEL.versions[version].text);
+    highlight();
+    describe();
+  }
+
+  function same(a, b) {
+    return a && b && a.kind === b.kind && a.table === b.table && a.column === b.column && a.edge === b.edge;
+  }
+
+  function select(next) {
+    selection = same(selection, next) ? null : next;
+    highlight();
+    describe();
+  }
+
+  function highlight() {
+    const svg = er.querySelector("svg");
+    svg.classList.toggle("has-sel", selection !== null);
+    const tables = new Set();
+    const edges = new Set();
+    const cols = new Set();
+    const key = selection?.kind === "column" ? `${selection.table}.${selection.column}` : null;
+    if (selection) {
+      if (selection.table) tables.add(selection.table);
+      for (const e of visibleEdges(version)) {
+        const from = e.from.join(".");
+        const to = e.to.join(".");
+        const hit = selection.kind === "table" ? e.from[0] === selection.table || e.to[0] === selection.table
+          : selection.kind === "column" ? from === key || to === key
+          : e.id === selection.edge;
+        if (!hit) continue;
+        edges.add(e.id);
+        tables.add(e.from[0]).add(e.to[0]);
+        cols.add(from).add(to);
+      }
+    }
+    svg.querySelectorAll("[data-table]").forEach((g) => {
+      g.classList.toggle("on", tables.has(g.dataset.table));
+      g.classList.toggle("sel", selection?.kind !== "edge" && g.dataset.table === selection?.table);
+    });
+    svg.querySelectorAll("[data-edge]").forEach((g) => g.classList.toggle("on", edges.has(g.dataset.edge)));
+    svg.querySelectorAll("[data-col]").forEach((g) => {
+      g.classList.toggle("hl", cols.has(g.dataset.col));
+      g.classList.toggle("sel", g.dataset.col === key);
+    });
+  }
+
+  function badgesHtml(c) {
+    const f = columnFlags(c);
+    return badges(c).map((b) => `<span class="badge ${b.toLowerCase()}">${b}</span>`).join("")
+      + (f.nullable ? '<span class="nul">null</span>' : "");
+  }
+
+  function refButton(e) {
+    return `<li><button type="button" data-edge="${e.id}"><code>${e.from.join(".")} → ${e.to.join(".")}</code><span>${esc(e.label)}</span></button></li>`;
+  }
+
+  function overview() {
+    const tables = visibleTables(version);
+    return `<div class="ph"><p class="eyebrow">Schema ${version}${version === MODEL.version ? " · current" : ""}</p>`
+      + `<h3>${words[tables.length]} in taskly.db</h3></div>`
+      + `<p class="small">Select a table, a column or a line for what it holds, the rules around it and the code that uses it.</p>`
+      + `<ul class="tlist">${tables.map((t) => `<li><button type="button" data-pick="${t.id}"><code>${t.id}</code><span>${esc(t.short)}</span></button></li>`).join("")}</ul>`
+      + `<p class="small"><code>now</code> in a default stands for <code>strftime('%Y-%m-%dT%H:%M:%SZ', 'now')</code>.</p>`;
+  }
+
+  function tableDetails(t, column) {
+    const refs = visibleEdges(version).filter((e) => e.from[0] === t.id || e.to[0] === t.id);
+    const era = t.until ? `Table · schema ${t.since}–${t.until}, dropped by migration ${t.until + 1}` : `Table · since schema ${t.since}`;
+    return `<button type="button" class="back" data-back>← All tables</button>`
+      + `<div class="ph"><p class="eyebrow">${era}</p><h3><code>${t.id}</code></h3></div>`
+      + `<p class="small">${md(t.about)}</p>`
+      + `<ul class="cols">${visibleColumns(t, version).map((c) => `<li${c.name === column ? ' class="sel"' : ""}>`
+        + `<div class="col-head"><code>${c.name}</code>${badgesHtml(c)}</div>`
+        + `<span class="sql">${esc(c.sql)}</span>${c.note ? `<p>${md(c.note)}</p>` : ""}</li>`).join("")}</ul>`
+      + (t.key ? `<p class="small">${md(t.key)}</p>` : "")
+      + (t.indexes ? `<h4>Indexes</h4><p class="small">${t.indexes.map((i) => `<code>${i.name}</code> on <code>${i.on}</code>`).join(", ")}</p>` : "")
+      + (refs.length ? `<h4>References</h4><ul class="refs">${refs.map(refButton).join("")}</ul>` : "")
+      + (t.rules ? `<h4>Kept by the code</h4><ul class="rules-list">${t.rules.map((r) => `<li>${md(r)}</li>`).join("")}</ul>` : "")
+      + `<h4>Queries</h4><p class="small">${md(t.code)}</p>`;
+  }
+
+  function edgeDetails(e) {
+    return `<button type="button" class="back" data-back>← All tables</button>`
+      + `<div class="ph"><p class="eyebrow">Reference${e.cascade ? " · deletes cascade" : ""}</p>`
+      + `<h3><code>${e.from.join(".")}</code> → <code>${e.to.join(".")}</code></h3></div>`
+      + `<p class="small">${md(e.card)}</p>`
+      + `<dl class="facts-sm">`
+      + `<div><dt>Can be empty</dt><dd>${e.optional ? "Yes: NULL is allowed" : "No: NOT NULL"}</dd></div>`
+      + `<div><dt>When the ${e.to[0]} row is deleted</dt><dd>${md(e.onDelete)}</dd></div></dl>`
+      + `<h4>Tables</h4><ul class="tlist">${[e.from[0], e.to[0]].map((id) => `<li><button type="button" data-pick="${id}"><code>${id}</code><span>${esc(tableOf(id, version).short)}</span></button></li>`).join("")}</ul>`;
+  }
+
+  function describe() {
+    if (selection?.kind === "edge") {
+      panel.innerHTML = edgeDetails(MODEL.edges.find((e) => e.id === selection.edge));
+    } else if (selection) {
+      panel.innerHTML = tableDetails(tableOf(selection.table, version), selection.column);
+    } else {
+      panel.innerHTML = overview();
+    }
+    panel.scrollTop = 0;
+    const row = panel.querySelector(".cols .sel");
+    if (row && getComputedStyle(panel).position === "sticky") panel.scrollTop = Math.max(0, row.offsetTop - 120);
+  }
+
+  er.addEventListener("click", (event) => {
+    const col = event.target.closest("[data-col]");
+    const table = event.target.closest("[data-table]");
+    const edge = event.target.closest("[data-edge]");
+    if (col) {
+      const [t, c] = col.dataset.col.split(".");
+      select({ kind: "column", table: t, column: c });
+    } else if (table) {
+      select({ kind: "table", table: table.dataset.table });
+    } else if (edge) {
+      select({ kind: "edge", edge: edge.dataset.edge });
+    } else {
+      selection = null;
+      highlight();
+      describe();
+    }
+  });
+
+  er.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") {
+      selection = null;
+      highlight();
+      describe();
+      return;
+    }
+    if (event.key !== "Enter" && event.key !== " ") return;
+    const target = event.target.closest("[data-table], [data-edge]");
+    if (!target) return;
+    event.preventDefault();
+    select(target.dataset.table ? { kind: "table", table: target.dataset.table } : { kind: "edge", edge: target.dataset.edge });
+  });
+
+  panel.addEventListener("click", (event) => {
+    const button = event.target.closest("button");
+    if (!button) return;
+    if (button.dataset.pick) select({ kind: "table", table: button.dataset.pick });
+    else if (button.dataset.edge) select({ kind: "edge", edge: button.dataset.edge });
+    else if (button.hasAttribute("data-back")) {
+      selection = null;
+      highlight();
+      describe();
+    }
+  });
+
+  for (const button of versionButtons) {
+    button.addEventListener("click", () => {
+      version = Number(button.dataset.version);
+      if (selection?.table && !tableOf(selection.table, version)) selection = null;
+      if (selection?.edge && !visibleEdges(version).some((e) => e.id === selection.edge)) selection = null;
+      if (selection?.column && !visibleColumns(tableOf(selection.table, version), version).some((c) => c.name === selection.column)) selection = null;
+      draw();
+    });
+  }
+
+  for (const button of document.querySelectorAll(".src")) {
+    button.addEventListener("click", () => {
+      if (version !== MODEL.version) {
+        version = MODEL.version;
+        draw();
+      }
+      const [t, c] = button.dataset.col.split(".");
+      selection = { kind: "column", table: t, column: c };
+      highlight();
+      describe();
+      document.getElementById("tables").scrollIntoView({ behavior: reducedMotion ? "auto" : "smooth", block: "start" });
+    });
+  }
+
+  const copyButton = document.getElementById("copy-svg");
+  const copyStatus = document.getElementById("copy-status");
+  const svgOut = document.getElementById("svg-out");
+  copyButton.addEventListener("click", () => {
+    const text = renderER(version, { standalone: true }) + "\n";
+    const copied = () => {
+      svgOut.hidden = true;
+      copyStatus.textContent = `Copied schema ${version}. Save it as docs/data-model.svg.`;
+    };
+    const showText = () => {
+      svgOut.hidden = false;
+      svgOut.value = text;
+      svgOut.focus();
+      svgOut.select();
+      copyStatus.textContent = "This browser won't copy from here: the SVG is selected below, so press Ctrl+C.";
+    };
+    try {
+      navigator.clipboard.writeText(text).then(copied, showText);
+    } catch {
+      showText();
+    }
+  });
+
+  draw();
+})();
+</script>
+</body>
+</html>
