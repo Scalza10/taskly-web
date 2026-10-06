@@ -9,6 +9,7 @@ from pathlib import Path
 # a database that already ran an entry never runs it again, so editing one
 # changes nothing on the VM.
 MIGRATIONS = [
+    # 1: one shared list, before accounts. Migration 3 moves its rows into tasks and drops it.
     """
     CREATE TABLE todos (
         id         INTEGER PRIMARY KEY AUTOINCREMENT,
