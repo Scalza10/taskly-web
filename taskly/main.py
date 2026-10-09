@@ -7,7 +7,7 @@ from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
 from fastapi.staticfiles import StaticFiles
 
-from . import auth, db, routes
+from . import auth, db, oauth_routes, routes
 from .settings import Settings
 
 # On Windows, mimetypes reads .js from the registry, which can say text/plain;
@@ -35,6 +35,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.add_exception_handler(RequestValidationError, invalid_request)
     auth.install(app)
     app.include_router(routes.router)
+    app.include_router(oauth_routes.router)
     @app.middleware("http")
     async def revalidate_the_page(request, call_next):
         # index.html names this build's hashed asset files, so after a deploy browsers must

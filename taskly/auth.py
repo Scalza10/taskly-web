@@ -197,8 +197,12 @@ def _same_origin(request: Request) -> bool:
 
 
 async def _middleware(request: Request, call_next):
-    is_api = request.url.path.startswith("/api/")
-    if is_api and request.method not in SAFE_METHODS and not _same_origin(request):
+    path = request.url.path
+    is_api = path.startswith(("/api/", "/oauth/", "/.well-known/"))
+    # The sign-in page for agents (oauth_routes) is a browser form too. /oauth/token and
+    # /oauth/register are called by the agents' servers, with bearer codes, not cookies.
+    guarded = path.startswith("/api/") or path == "/oauth/authorize"
+    if guarded and request.method not in SAFE_METHODS and not _same_origin(request):
         return JSONResponse({"detail": "Cross-site request refused"}, status_code=403,
                             headers={"Cache-Control": "no-store"})
     response = await call_next(request)
