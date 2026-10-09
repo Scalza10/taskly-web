@@ -7,7 +7,7 @@ from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
 from fastapi.staticfiles import StaticFiles
 
-from . import auth, db, oauth_routes, routes
+from . import auth, db, mcp_server, oauth_routes, routes
 from .settings import Settings
 
 # On Windows, mimetypes reads .js from the registry, which can say text/plain;
@@ -29,13 +29,17 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     db.migrate(settings.db_path)
 
     docs = settings.api_docs
+    agents = mcp_server.build(settings)
+    # The MCP SDK's session manager needs a task group for the app's lifetime.
     app = FastAPI(title="Taskly", docs_url="/docs" if docs else None, redoc_url="/redoc" if docs else None,
-                  openapi_url="/openapi.json" if docs else None)
+                  openapi_url="/openapi.json" if docs else None, lifespan=lambda app: mcp_server.running(agents))
     app.state.settings = settings
     app.add_exception_handler(RequestValidationError, invalid_request)
     auth.install(app)
     app.include_router(routes.router)
     app.include_router(oauth_routes.router)
+    # A route, not a mount: exactly /mcp, the address agents are given (a mount would redirect to /mcp/).
+    app.add_route(oauth_routes.MCP_PATH, mcp_server.Guard(agents, settings))
     @app.middleware("http")
     async def revalidate_the_page(request, call_next):
         # index.html names this build's hashed asset files, so after a deploy browsers must
