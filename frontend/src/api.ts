@@ -1,7 +1,10 @@
 // Talks to the FastAPI backend. JSON in and out; errors become ApiError with the HTTP status.
 
+// new → progress (in progress) → done. done is status === "done", kept for older pages and agents.
+export type Status = "new" | "progress" | "done";
+
 export type Task = {
-  id: string; list_id: string; title: string; done: boolean;
+  id: string; list_id: string; title: string; status: Status; done: boolean;
   created_by: string | null; done_by: string | null; created_at: string; updated_at: string;
   pending?: boolean; // only on this device: a change not sent yet
 };

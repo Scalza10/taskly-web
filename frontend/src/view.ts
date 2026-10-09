@@ -1,6 +1,6 @@
 // What the screen shows: the last snapshot from the server with the unsent changes applied on
 // top, sorted as the server sorts. Pure: easy to test, and the same answer every time.
-import type { Snapshot, Task } from "./api";
+import type { Snapshot, Status, Task } from "./api";
 import type { QueuedChange } from "./store";
 
 const TASKS = "/api/tasks";
@@ -8,7 +8,11 @@ const TASKS = "/api/tasks";
 export type Connection = "online" | "offline" | "trouble";
 
 export function applyQueue(snapshot: Snapshot, queue: QueuedChange[]): Snapshot {
-  const lists = snapshot.lists.map((list) => ({ ...list, tasks: list.tasks.map((task) => ({ ...task })) }));
+  // A snapshot stored by the page before tasks had a status has only done.
+  const lists = snapshot.lists.map((list) => ({
+    ...list,
+    tasks: list.tasks.map((task) => ({ ...task, status: task.status ?? (task.done ? "done" : "new") })),
+  }));
   const find = (id: string) => {
     for (const list of lists) {
       const index = list.tasks.findIndex((task) => task.id === id);
@@ -23,7 +27,7 @@ export function applyQueue(snapshot: Snapshot, queue: QueuedChange[]): Snapshot 
       const list = lists.find((l) => l.id === body.list_id);
       if (!list || find(body.id)) continue;
       list.tasks.push({
-        id: body.id, list_id: body.list_id, title: body.title, done: false,
+        id: body.id, list_id: body.list_id, title: body.title, status: "new", done: false,
         created_by: snapshot.me, done_by: null, created_at: change.queuedAt, updated_at: change.queuedAt, pending: true,
       });
       continue;
@@ -35,12 +39,14 @@ export function applyQueue(snapshot: Snapshot, queue: QueuedChange[]): Snapshot 
       found.list.tasks.splice(found.index, 1);
       continue;
     }
-    const body = change.body as { title?: string; done?: boolean };
+    const body = change.body as { title?: string; done?: boolean; status?: Status };
     const task = found.list.tasks[found.index];
     if (body.title !== undefined) task.title = body.title;
-    if (body.done !== undefined) {
-      task.done = body.done;
-      task.done_by = body.done ? snapshot.me : null;
+    const status = nextStatus(task.status, body);
+    if (status !== undefined) {
+      task.status = status;
+      task.done = status === "done";
+      task.done_by = task.done ? snapshot.me : null;
     }
     task.pending = true;
   }
@@ -48,13 +54,22 @@ export function applyQueue(snapshot: Snapshot, queue: QueuedChange[]): Snapshot 
   return { ...snapshot, lists: lists.map((list) => ({ ...list, tasks: sortTasks(list.tasks) })) };
 }
 
-// As the server sorts: open first, then newest first. Ties keep their order (the server's).
+// As the server applies a PATCH: status wins; done: true finishes; done: false reopens only a
+// finished task (one in progress stays in progress). undefined: the status doesn't change.
+function nextStatus(current: Status, body: { done?: boolean; status?: Status }): Status | undefined {
+  if (body.status !== undefined) return body.status;
+  if (body.done === true) return "done";
+  if (body.done === false && current === "done") return "new";
+  return undefined;
+}
+
+// As the server sorts: not done first, then oldest first. Ties keep their order (the server's).
 export function sortTasks(tasks: Task[]): Task[] {
   return tasks
     .map((task, index) => ({ task, index }))
     .sort((a, b) =>
-      Number(a.task.done) - Number(b.task.done) ||
-      b.task.created_at.localeCompare(a.task.created_at) ||
+      Number(a.task.status === "done") - Number(b.task.status === "done") ||
+      a.task.created_at.localeCompare(b.task.created_at) ||
       a.index - b.index)
     .map(({ task }) => task);
 }
