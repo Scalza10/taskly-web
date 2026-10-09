@@ -1,6 +1,7 @@
 // Shown when there is no session. Accounts are made by the admin (python -m taskly.admin add-user).
 import { useState, type FormEvent } from "react";
 import { api, type Me } from "./api";
+import { Wordmark } from "./Chrome";
 import { loginMessage } from "./messages";
 
 export function Login({ onLoggedIn }: { onLoggedIn: (username: string) => void }) {
@@ -24,9 +25,10 @@ export function Login({ onLoggedIn }: { onLoggedIn: (username: string) => void }
   }
 
   return (
-    <main>
-      <h1>Taskly</h1>
-      <form className="stack" onSubmit={submit}>
+    <main className="welcome">
+      <Wordmark />
+      <h1 className="headline">Log in.</h1>
+      <form className="card stack" onSubmit={submit}>
         <label>
           Username
           <input value={username} onChange={(e) => setUsername(e.target.value)} autoComplete="username" autoCapitalize="none" required autoFocus />
@@ -36,7 +38,7 @@ export function Login({ onLoggedIn }: { onLoggedIn: (username: string) => void }
           <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="current-password" required />
         </label>
         {error && <p className="error" role="alert">{error}</p>}
-        <button type="submit" disabled={busy}>Log in</button>
+        <button type="submit" className="primary" disabled={busy}>Log in</button>
       </form>
     </main>
   );

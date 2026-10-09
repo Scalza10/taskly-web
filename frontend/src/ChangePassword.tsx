@@ -25,7 +25,7 @@ export function ChangePassword({ onDone }: { onDone: () => void }) {
   }
 
   return (
-    <form className="stack panel" onSubmit={submit}>
+    <form className="card panel stack" onSubmit={submit}>
       <label>
         Current password
         <input type="password" value={current} onChange={(e) => setCurrent(e.target.value)} autoComplete="current-password" required />
@@ -41,8 +41,8 @@ export function ChangePassword({ onDone }: { onDone: () => void }) {
       <p className="hint">Your other devices will be logged out.</p>
       {error && <p className="error" role="alert">{error}</p>}
       <div className="row">
-        <button type="submit" disabled={busy}>Change password</button>
-        <button type="button" className="plain" onClick={onDone}>Cancel</button>
+        <button type="submit" className="primary" disabled={busy}>Change password</button>
+        <button type="button" className="text" onClick={onDone}>Cancel</button>
       </div>
     </form>
   );

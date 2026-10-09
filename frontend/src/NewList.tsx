@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from "react";
 import { api, type ListInfo } from "./api";
-import type { Change } from "./ListsPage";
+import type { Change } from "./ListScreen";
 
 export function NewList({ change, onCreated, onCancel }: { change: Change; onCreated: (id: string) => void; onCancel: () => void }) {
   const [name, setName] = useState("");
@@ -14,10 +14,10 @@ export function NewList({ change, onCreated, onCancel }: { change: Change; onCre
   }
 
   return (
-    <form className="panel row" onSubmit={submit} autoComplete="off">
+    <form className="card panel row" onSubmit={submit} autoComplete="off">
       <input aria-label="new list name" placeholder="List name" value={name} onChange={(e) => setName(e.target.value)} maxLength={100} required autoFocus />
-      <button type="submit">Create</button>
-      <button type="button" className="plain" onClick={onCancel}>Cancel</button>
+      <button type="submit" className="primary">Create</button>
+      <button type="button" className="text" onClick={onCancel}>Cancel</button>
     </form>
   );
 }

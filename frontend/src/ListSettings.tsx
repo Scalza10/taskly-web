@@ -1,7 +1,8 @@
 // Owners rename, add and remove people, and delete. Members see who's in and can leave.
 import { useState, type FormEvent } from "react";
 import { api, type ListInfo, type TaskList } from "./api";
-import type { Change } from "./ListsPage";
+import { X } from "lucide-react";
+import type { Change } from "./ListScreen";
 
 type Props = { list: TaskList; me: string; change: Change; onClose: () => void };
 
@@ -32,11 +33,11 @@ export function ListSettings({ list, me, change, onClose }: Props) {
   }
 
   return (
-    <section className="panel stack">
+    <section className="card panel stack">
       {owner ? (
         <form className="row" onSubmit={rename}>
           <input aria-label="list name" value={name} onChange={(e) => setName(e.target.value)} maxLength={100} required />
-          <button type="submit">Rename</button>
+          <button type="submit" className="primary">Rename</button>
         </form>
       ) : (
         <p className="hint">{list.owner ? `${list.owner} owns this list.` : "Nobody owns this list."}</p>
@@ -50,7 +51,7 @@ export function ListSettings({ list, me, change, onClose }: Props) {
               <span>{username}{username === list.owner && " (owner)"}</span>
               {owner && username !== list.owner && (
                 <button type="button" className="delete" aria-label={`remove ${username}`} onClick={() => void change(() => api("DELETE", member(username)))}>
-                  ×
+                  <X size={16} aria-hidden="true" />
                 </button>
               )}
             </li>
@@ -59,7 +60,7 @@ export function ListSettings({ list, me, change, onClose }: Props) {
         {owner && (
           <form className="row" onSubmit={add} autoComplete="off">
             <input aria-label="username to add" placeholder="Username" value={newMember} onChange={(e) => setNewMember(e.target.value)} autoCapitalize="none" />
-            <button type="submit">Add</button>
+            <button type="submit" className="primary">Add</button>
           </form>
         )}
       </div>
@@ -67,15 +68,15 @@ export function ListSettings({ list, me, change, onClose }: Props) {
       {confirming ? (
         <div className="row confirm">
           <span>{owner ? `Delete “${list.name}” and its ${list.tasks.length} ${list.tasks.length === 1 ? "task" : "tasks"}?` : `Leave “${list.name}”?`}</span>
-          <button type="button" className="danger" onClick={deleteOrLeave}>{owner ? "Delete" : "Leave"}</button>
-          <button type="button" className="plain" onClick={() => setConfirming(false)}>Cancel</button>
+          <button type="button" className="primary" onClick={deleteOrLeave}>{owner ? "Delete" : "Leave"}</button>
+          <button type="button" className="text" onClick={() => setConfirming(false)}>Cancel</button>
         </div>
       ) : (
         <div className="row">
-          <button type="button" className="plain danger-text" onClick={() => setConfirming(true)}>
+          <button type="button" className="text danger-text" onClick={() => setConfirming(true)}>
             {owner ? "Delete list" : "Leave list"}
           </button>
-          <button type="button" className="plain" onClick={onClose}>Close</button>
+          <button type="button" className="text" onClick={onClose}>Close</button>
         </div>
       )}
     </section>

@@ -1,90 +1,86 @@
-// The lists, from the device's copy (works offline). Task changes queue up and sync;
-// list and member changes go straight to the server and need a connection.
-import { useEffect, useState } from "react";
-import { ApiError } from "./api";
-import { sync } from "./device";
-import { ListPicker } from "./ListPicker";
-import { ListSettings } from "./ListSettings";
-import { isLoggedOut } from "./messages";
-import { NewList } from "./NewList";
+// Everything after logging in: the header, the List, Board and Focus screens (the tabs), and on a
+// phone the tab bar. The lists come from the device's copy (works offline); task changes queue up
+// and sync, list and member changes go straight to the server and need a connection.
+import { useEffect, useState, type ReactNode } from "react";
+import { BoardScreen } from "./BoardScreen";
+import { Empty } from "./Chrome";
+import { FocusScreen } from "./FocusScreen";
+import { Header, TabBar } from "./Header";
+import { ListScreen } from "./ListScreen";
 import { pickList, savedList, saveList } from "./pickList";
+import { savedScreen, saveScreen, type Screen } from "./screen";
 import { StatusLine } from "./StatusLine";
-import { Tasks } from "./Tasks";
 import { useLocal } from "./useLocal";
+import { useTimer } from "./useTimer";
+import { useWide } from "./useWide";
 import { applyQueue } from "./view";
 
-export type Change = <T>(request: () => Promise<T>) => Promise<T | undefined>;
-type Panel = "none" | "new" | "settings";
+type Props = { username: string; notes: ReactNode; onLogout: () => void; onSessionLost: () => void };
 
-export function ListsPage({ onSessionLost }: { onSessionLost: () => void }) {
+export function ListsPage({ username, notes, onLogout, onSessionLost }: Props) {
+  const wide = useWide();
   const { local, enqueue } = useLocal();
   const [selected, setSelected] = useState<string | null>(savedList);
-  const [panel, setPanel] = useState<Panel>("none");
-  const [error, setError] = useState<string | null>(null);
+  const [screen, setScreen] = useState<Screen>(savedScreen);
+  const [timer, act] = useTimer();
 
   useEffect(() => {
     if (local?.sync.loggedOut) onSessionLost();
   }, [local, onSessionLost]);
 
-  async function change<T>(request: () => Promise<T>): Promise<T | undefined> {
-    let result: T | undefined;
-    try {
-      result = await request();
-      setError(null);
-    } catch (e) {
-      if (isLoggedOut(e)) {
-        onSessionLost();
-        return undefined;
-      }
-      setError(e instanceof ApiError ? e.message : "That needs a connection.");
-    }
-    await sync.request();
-    return result;
+  function show(next: Screen) {
+    setScreen(next);
+    saveScreen(next);
+    window.scrollTo(0, 0);
   }
 
   function choose(id: string) {
     setSelected(id);
     saveList(id);
-    setPanel("none");
   }
 
-  if (!local) return null;
-  if (!local.stored) {
-    return (
-      <main>
-        <h1>Taskly</h1>
+  let content: ReactNode = null;
+  if (local && !local.stored) {
+    // The first download hasn't arrived yet: the status line says why.
+    content = (
+      <div className="screen list-screen">
         <StatusLine local={local} />
-      </main>
+      </div>
     );
+  } else if (local?.stored) {
+    const view = applyQueue(local.stored.data, local.queue);
+    const current = view.lists.find((list) => list.id === pickList(view.lists, selected));
+    if (screen === "list") {
+      content = (
+        <ListScreen
+          lists={view.lists}
+          current={current}
+          me={view.me}
+          local={local}
+          enqueue={enqueue}
+          onChoose={choose}
+          onSessionLost={onSessionLost}
+        />
+      );
+    } else if (!current) {
+      content = (
+        <div className="screen list-screen">
+          <Empty>No lists yet. Make one on the List screen.</Empty>
+        </div>
+      );
+    } else if (screen === "board") {
+      content = <BoardScreen key={current.id} list={current} enqueue={enqueue} />;
+    } else {
+      content = <FocusScreen tasks={current.tasks} timer={timer} act={act} />;
+    }
   }
-
-  const view = applyQueue(local.stored.data, local.queue);
-  const current = view.lists.find((list) => list.id === pickList(view.lists, selected));
-  const online = local.sync.connection === "online";
-  const toggle = (which: Panel) => setPanel(panel === which ? "none" : which);
 
   return (
-    <main>
-      <ListPicker
-        lists={view.lists}
-        current={current}
-        online={online}
-        onChoose={choose}
-        onNew={() => toggle("new")}
-        onSettings={() => toggle("settings")}
-      />
-      {online && panel === "new" && <NewList change={change} onCreated={choose} onCancel={() => setPanel("none")} />}
-      {online && panel === "settings" && current && (
-        // Not key={current.id}: Tasks below has that key, and siblings sharing a key leave this panel behind when it closes.
-        <ListSettings key={`settings-${current.id}`} list={current} me={view.me} change={change} onClose={() => setPanel("none")} />
-      )}
-      {error && <p className="error" role="alert">{error}</p>}
-      {current ? (
-        <Tasks key={current.id} list={current} enqueue={enqueue} />
-      ) : (
-        <p className="empty">No lists yet. Make one with “New list”.</p>
-      )}
-      <StatusLine local={local} />
-    </main>
+    <>
+      <Header username={username} screen={screen} onScreen={show} onLogout={onLogout} />
+      {notes}
+      <main className="content">{content}</main>
+      {!wide && <TabBar screen={screen} onScreen={show} />}
+    </>
   );
 }

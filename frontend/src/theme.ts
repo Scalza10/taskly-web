@@ -4,7 +4,7 @@
 export type Theme = "light" | "dark";
 
 const KEY = "taskly-theme"; // also in index.html
-const BACKGROUND: Record<Theme, string> = { light: "#f6f6f4", dark: "#151514" }; // --bg in style.css, for the phone's status bar
+const BACKGROUND: Record<Theme, string> = { light: "#eae7e7", dark: "#1c1a1a" }; // --ground in style.css, for the phone's status bar
 
 export const systemDark = matchMedia("(prefers-color-scheme: dark)");
 

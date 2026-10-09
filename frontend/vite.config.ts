@@ -21,8 +21,8 @@ export default defineConfig({
         description: "Shared to-do lists",
         start_url: "/",
         display: "standalone",
-        theme_color: "#f6f6f4",
-        background_color: "#f6f6f4",
+        theme_color: "#eae7e7",
+        background_color: "#eae7e7",
         icons: [
           { src: "pwa-192x192.png", sizes: "192x192", type: "image/png" },
           { src: "pwa-512x512.png", sizes: "512x512", type: "image/png" },
@@ -30,6 +30,8 @@ export default defineConfig({
         ],
       },
       workbox: {
+        // The fonts too (Archivo, bundled from @fontsource), so the page looks the same offline.
+        globPatterns: ["**/*.{js,css,html,ico,png,svg,woff2}"],
         // The page handles data itself (store.ts, sync.ts); the service worker only serves the page's files.
         // /oauth/ is the server's sign-in page for AI agents (MCP); it must never get index.html.
         navigateFallbackDenylist: [/^\/api\//, /^\/health$/, /^\/docs/, /^\/redoc/, /^\/openapi\.json$/,

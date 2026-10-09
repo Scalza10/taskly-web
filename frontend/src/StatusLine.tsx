@@ -13,14 +13,17 @@ export function StatusLine({ local }: { local: Local }) {
 
   const { connection, notes } = local.sync;
   return (
-    <div className={`status ${connection}`} role="status">
-      <span>{statusText(connection, local.queue.length, local.stored?.syncedAt, now)}</span>
+    <>
+      <div className={`status ${connection}`} role="status">
+        <span className="status-dot" aria-hidden="true" />
+        {statusText(connection, local.queue.length, local.stored?.syncedAt, now)}
+      </div>
       {notes.length > 0 && (
-        <span className="error">
+        <div className="notes error">
           {notes.length === 1 ? notes[0] : `${notes.length} changes couldn't be applied.`}{" "}
-          <button type="button" className="plain" onClick={() => sync.dismissNotes()}>OK</button>
-        </span>
+          <button type="button" className="text" onClick={() => sync.dismissNotes()}>OK</button>
+        </div>
       )}
-    </div>
+    </>
   );
 }

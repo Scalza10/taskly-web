@@ -4,7 +4,7 @@
 // screen mid-logout, and the device must still be cleared.
 import { useCallback, useEffect, useState } from "react";
 import { api, type Me } from "./api";
-import { AccountBar } from "./AccountBar";
+import { Blobs, Wordmark } from "./Chrome";
 import { forgetDevice, store, sync } from "./device";
 import { ListsPage } from "./ListsPage";
 import { Login } from "./Login";
@@ -85,44 +85,48 @@ export function App() {
     <>
       {logoutError && <p className="error account-error" role="alert">{logoutError}</p>}
       {unsynced > 0 && (
-        <div className="panel row confirm">
+        <div className="card panel row confirm">
           <span>{unsynced === 1 ? "1 change hasn't" : `${unsynced} changes haven't`} synced. Log out anyway?</span>
-          <button type="button" className="danger" onClick={logoutAnyway}>Log out</button>
-          <button type="button" className="plain" onClick={() => setUnsynced(0)}>Cancel</button>
+          <button type="button" className="primary" onClick={logoutAnyway}>Log out</button>
+          <button type="button" className="text" onClick={() => setUnsynced(0)}>Cancel</button>
         </div>
       )}
     </>
   );
 
-  switch (screen.kind) {
-    case "checking":
-      return null;
-    case "blocked":
-      return (
-        <main>
-          <h1>Taskly</h1>
-          <p className="error" role="alert">
-            This browser won't let Taskly save data on this device, which it needs. Check that site data isn't blocked, or try another browser.
-          </p>
-        </main>
-      );
-    case "connect":
-      return (
-        <main>
-          <h1>Taskly</h1>
-          <p className="hint">Connect to the internet once to log in.</p>
-          <button type="button" onClick={() => void start()}>Try again</button>
-        </main>
-      );
-    case "login":
-      return <>{logoutNotes}<Login onLoggedIn={loggedIn} /></>;
-    case "lists":
-      return (
-        <>
-          <AccountBar username={screen.me} onLogout={logout} />
-          {logoutNotes}
-          <ListsPage onSessionLost={sessionLost} />
-        </>
-      );
+  return (
+    <div className="app">
+      <Blobs />
+      {page()}
+    </div>
+  );
+
+  function page() {
+    switch (screen.kind) {
+      case "checking":
+        return null;
+      case "blocked":
+        return (
+          <main className="welcome">
+            <Wordmark />
+            <p className="error" role="alert">
+              This browser won't let Taskly save data on this device, which it needs. Check that site data isn't blocked, or try another browser.
+            </p>
+          </main>
+        );
+      case "connect":
+        return (
+          <main className="welcome">
+            <Wordmark />
+            <h1 className="headline">Connect once.</h1>
+            <p className="hint">Connect to the internet once to log in.</p>
+            <button type="button" className="primary" onClick={() => void start()}>Try again</button>
+          </main>
+        );
+      case "login":
+        return <>{logoutNotes}<Login onLoggedIn={loggedIn} /></>;
+      case "lists":
+        return <ListsPage username={screen.me} notes={logoutNotes} onLogout={logout} onSessionLost={sessionLost} />;
+    }
   }
 }
