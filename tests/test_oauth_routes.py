@@ -73,6 +73,8 @@ def test_the_page_asks_for_a_password_without_a_session(anon):
     assert 'name="password"' in page.text and "Claude" in page.text and "claude.ai" in page.text
     assert "frame-ancestors 'none'" in page.headers["content-security-policy"]
     assert page.headers["x-frame-options"] == "DENY"
+    # Not no-referrer: browsers then post the form with "Origin: null", refused as cross-site.
+    assert page.headers["referrer-policy"] == "same-origin"
     assert page.headers["cache-control"] == "no-store"
 
 

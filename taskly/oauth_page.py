@@ -6,10 +6,12 @@ from html import escape
 from urllib.parse import urlsplit
 
 # No form-action: Chrome applies it to the redirect after the form, which goes to the agent's site.
+# same-origin, not no-referrer: with no-referrer the form posts with "Origin: null", which auth's
+# cross-site check refuses. The agent's site still gets no Referer (the URL holds state and a challenge).
 HEADERS = {
     "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'; frame-ancestors 'none'; base-uri 'none'",
     "X-Frame-Options": "DENY",
-    "Referrer-Policy": "no-referrer",
+    "Referrer-Policy": "same-origin",
 }
 
 STYLE = """
