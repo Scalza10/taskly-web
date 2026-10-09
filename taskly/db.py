@@ -110,7 +110,6 @@ MIGRATIONS = [
         last_used_at TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
     );
     CREATE INDEX oauth_grants_user_id ON oauth_grants(user_id);
-    CREATE INDEX oauth_grants_client_id ON oauth_grants(client_id);
     CREATE TABLE oauth_codes (
         code_hash      TEXT    PRIMARY KEY,
         client_id      TEXT    NOT NULL REFERENCES oauth_clients(id) ON DELETE CASCADE,

@@ -181,7 +181,7 @@ button:focus-visible, .src:focus-visible { outline: 2px solid var(--accent); out
   <p class="lede">What the server keeps in its one SQLite file, how the tables point at each other, and what a phone keeps of it.</p>
   <dl class="facts">
     <div><dt>File</dt><dd><code>/data/taskly.db</code> (<code>~/taskly/data</code> on the VM)</dd></div>
-    <div><dt>Schema</dt><dd><code>PRAGMA user_version = 3</code></dd></div>
+    <div><dt>Schema</dt><dd><code>PRAGMA user_version = 4</code></dd></div>
     <div><dt>Journal</dt><dd><code>journal_mode = WAL</code></dd></div>
     <div><dt>Foreign keys</dt><dd><code>ON</code>, set on every connection</dd></div>
     <div><dt>Times</dt><dd><code>2026-09-28T12:00:00Z</code>: UTC text, set by SQLite</dd></div>
@@ -195,7 +195,8 @@ button:focus-visible, .src:focus-visible { outline: 2px solid var(--accent); out
       <div class="versions" role="group" aria-label="Schema version">
         <button type="button" data-version="1" aria-pressed="false">1 · one list</button>
         <button type="button" data-version="2" aria-pressed="false">2 · accounts</button>
-        <button type="button" data-version="3" aria-pressed="true">3 · named lists</button>
+        <button type="button" data-version="3" aria-pressed="false">3 · named lists</button>
+        <button type="button" data-version="4" aria-pressed="true">4 · agents</button>
       </div>
     </div>
     <p class="version-note" id="version-note"></p>
@@ -343,6 +344,7 @@ button:focus-visible, .src:focus-visible { outline: 2px solid var(--accent); out
     <li><strong>Ticking records who</strong><span>Setting <code>done</code> sets <code>done_by</code> to whoever ticked; unticking clears it. Every task change bumps the task's <code>updated_at</code>.</span></li>
     <li><strong>Lengths</strong><span>Usernames are 2–32 letters, digits, <code>.</code>, <code>_</code> or <code>-</code>. List names are 1–100 characters and titles 1–500, trimmed. Passwords need at least 6.</span></li>
     <li><strong>Sessions expire</strong><span>90 days after <code>last_used_at</code>, which is written at most once an hour. Expired rows are deleted at the next login, or when their cookie comes back.</span></li>
+    <li><strong>Agents connect as a person</strong><span>An AI agent (Claude, Gemini) signs in through <code>/oauth/authorize</code> and gets a grant: a code is swapped once for an access token (1 hour) and a refresh token (90 days, replaced on every use). Codes and tokens are stored as SHA-256, like sessions. A password change, <code>reset-password</code>, <code>disable-user</code> and <code>revoke-sessions</code> delete the person's grants.</span></li>
     <li><strong>Foreign keys are on per connection</strong><span><code>db.connect()</code> runs <code>PRAGMA foreign_keys = ON</code>. SQLite leaves them off otherwise, and the cascades depend on them.</span></li>
   </ul>
 </section>
@@ -363,19 +365,21 @@ button:focus-visible, .src:focus-visible { outline: 2px solid var(--accent); out
   <textarea id="svg-out" readonly hidden aria-label="The diagram as SVG"></textarea>
 </section>
 
-<footer class="foot">Drawn from <code>taskly/db.py</code> at schema 3, October 2026.</footer>
+<footer class="foot">Drawn from <code>taskly/db.py</code> at schema 4, October 2026.</footer>
 </main>
 
 <script id="model">
 // The schema as data. The page and docs/data-model.svg are both drawn from it.
 // since/until: the schema versions (PRAGMA user_version) a table, column or reference exists in.
 const MODEL = {
-  version: 3,
-  canvas: { width: 1160, height: 700 },
+  version: 4,
+  // From schema 4 the OAuth tables need a band below the others.
+  canvas: { width: 1160, height: 700, tall: { since: 4, height: 1210 } },
   versions: {
     1: { text: "The first schema: one shared list in `todos`, no accounts (Caddy's password guarded the site)." },
     2: { text: "Accounts (phase 1b) add `users` and `sessions`. `todos` gains `created_by` and `done_by`, empty for todos made before." },
-    3: { text: "Named lists (phase 2), the current schema, add `lists`, `list_members` and `tasks`. Existing todos became tasks in a list named \"Taskly\", owned by the oldest active account with every active account as a member, and `todos` was dropped." },
+    3: { text: "Named lists (phase 2) add `lists`, `list_members` and `tasks`. Existing todos became tasks in a list named \"Taskly\", owned by the oldest active account with every active account as a member, and `todos` was dropped." },
+    4: { text: "AI agents (MCP connectors), the current schema, add `oauth_clients`, `oauth_codes`, `oauth_grants` and `oauth_tokens`: an agent signs in as a person and works with that person's lists through `/mcp`." },
   },
   tables: [
     {
@@ -391,7 +395,7 @@ const MODEL = {
       ],
       rules: [
         "Usernames are 2–32 letters, digits, `.`, `_` or `-`; passwords need at least 6 characters.",
-        "`disable-user` hands the account's lists over and deletes its sessions.",
+        "`disable-user` hands the account's lists over and deletes its sessions and its agents' grants.",
       ],
       code: "`users.py`, `admin.py`; joined for names in `sessions.py`, `snapshot.py` and `tasks.py`",
     },
@@ -482,6 +486,75 @@ const MODEL = {
       ],
       code: "migrations 1 to 3 in `db.py`",
     },
+    {
+      id: "oauth_grants", since: 4, x: 64, y: 640,
+      short: "one per connected agent",
+      about: "One row per agent a person connected (Claude on the web, Claude Code, ...): made when the agent swaps its one-time code for tokens.",
+      columns: [
+        { name: "id", sql: "INTEGER PRIMARY KEY AUTOINCREMENT" },
+        { name: "client_id", sql: "TEXT NOT NULL REFERENCES oauth_clients(id) ON DELETE CASCADE" },
+        { name: "user_id", sql: "INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE", note: "The agent acts as this person, with the same rights as on the page." },
+        { name: "resource", sql: "TEXT NOT NULL", note: "The address the tokens are for: `https://<site>/mcp`. A token is refused anywhere else." },
+        { name: "scope", sql: "TEXT NOT NULL", note: "Always `tasks` so far." },
+        { name: "created_at", sql: "TEXT NOT NULL DEFAULT now" },
+        { name: "last_used_at", sql: "TEXT NOT NULL DEFAULT now", note: "Bumped on every refresh. Grants unused for 90 days are deleted when another is made." },
+      ],
+      indexes: [{ name: "oauth_grants_user_id", on: "user_id" }],
+      rules: [
+        "A password change, `reset-password`, `disable-user` and `revoke-sessions` delete the person's grants, and their tokens with them.",
+      ],
+      code: "`oauth.py`; the token endpoint in `oauth_routes.py`",
+    },
+    {
+      id: "oauth_tokens", since: 4, x: 64, y: 900,
+      short: "access and refresh tokens",
+      about: "The tokens of a grant. The agent sends the access token to `/mcp`; the refresh token gets new ones.",
+      columns: [
+        { name: "token_hash", sql: "TEXT PRIMARY KEY", note: "SHA-256 of the token, like sessions: a copy of the file can't be used to connect." },
+        { name: "grant_id", sql: "INTEGER NOT NULL REFERENCES oauth_grants(id) ON DELETE CASCADE" },
+        { name: "kind", sql: "TEXT NOT NULL CHECK (kind IN ('access', 'refresh'))" },
+        { name: "expires_at", sql: "TEXT NOT NULL", note: "Access tokens last 1 hour, refresh tokens 90 days. Expired rows are deleted when new tokens are made." },
+      ],
+      indexes: [{ name: "oauth_tokens_grant_id", on: "grant_id" }],
+      rules: [
+        "A refresh token works once: using it deletes it and makes a new access and refresh token.",
+      ],
+      code: "`oauth.py`; checked for every `/mcp` request by `mcp_server.Guard`",
+    },
+    {
+      id: "oauth_clients", since: 4, x: 444, y: 700,
+      short: "agents that registered",
+      about: "An agent's registration (RFC 7591): its name and where codes may be sent. Anyone can register, so only known redirect addresses are accepted.",
+      columns: [
+        { name: "id", sql: "TEXT PRIMARY KEY", note: "The client_id, made by the server." },
+        { name: "name", sql: "TEXT NOT NULL DEFAULT ''", note: "Shown on the sign-in page: \"Claude wants to see and change your Taskly lists and tasks\"." },
+        { name: "redirect_uris", sql: "TEXT NOT NULL", note: "A JSON array. Only claude.ai, claude.com, Gemini's googleusercontent.com, antigravity.google and this machine (localhost) are accepted." },
+        { name: "created_at", sql: "TEXT NOT NULL DEFAULT now" },
+      ],
+      rules: [
+        "Registrations that never got a grant are deleted after a day, when another agent registers.",
+      ],
+      code: "`oauth.py`, `/oauth/register` in `oauth_routes.py`",
+    },
+    {
+      id: "oauth_codes", since: 4, x: 444, y: 880,
+      short: "one-time codes, 5 minutes",
+      about: "Made when the person presses Allow, sent to the agent's redirect address, and swapped once for tokens.",
+      columns: [
+        { name: "code_hash", sql: "TEXT PRIMARY KEY", note: "SHA-256 of the code." },
+        { name: "client_id", sql: "TEXT NOT NULL REFERENCES oauth_clients(id) ON DELETE CASCADE" },
+        { name: "user_id", sql: "INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE" },
+        { name: "redirect_uri", sql: "TEXT NOT NULL", note: "The swap must name the same address." },
+        { name: "code_challenge", sql: "TEXT NOT NULL", note: "PKCE (S256): the swap must bring the secret this was made from." },
+        { name: "resource", sql: "TEXT NOT NULL" },
+        { name: "scope", sql: "TEXT NOT NULL" },
+        { name: "expires_at", sql: "TEXT NOT NULL", note: "5 minutes after Allow." },
+      ],
+      rules: [
+        "A code is deleted on its first swap, right or wrong.",
+      ],
+      code: "`oauth.py`, `/oauth/authorize` and `/oauth/token` in `oauth_routes.py`",
+    },
   ],
   // from: the referencing column (many), to: the referenced key (one).
   // sides: which side of each table the line leaves from. labelAt overrides the label's place.
@@ -522,6 +595,26 @@ const MODEL = {
       label: "ticked by", labelT: 0.08,
       card: "Who ticked the todo.",
       onDelete: "Nothing; accounts are never deleted." },
+    { id: "grant-user", since: 4, from: ["oauth_grants", "user_id"], to: ["users", "id"], sides: ["left", "left"], cascade: true,
+      label: "acts as", labelAt: [36, 615, "start"],
+      card: "A person can connect any number of agents.",
+      onDelete: "CASCADE. Accounts are never deleted, though: revoking deletes the grant rows instead." },
+    { id: "grant-client", since: 4, from: ["oauth_grants", "client_id"], to: ["oauth_clients", "id"], sides: ["right", "left"], cascade: true,
+      label: "for agent", labelT: 0.5,
+      card: "An agent's registration can have a grant per person who connected it.",
+      onDelete: "CASCADE." },
+    { id: "token-grant", since: 4, from: ["oauth_tokens", "grant_id"], to: ["oauth_grants", "id"], sides: ["left", "left"], cascade: true,
+      label: "of", labelAt: [30, 880, "start"],
+      card: "A grant has its current access and refresh tokens (and access tokens from before a refresh, until they expire).",
+      onDelete: "CASCADE: deleting a grant (revoking) deletes its tokens." },
+    { id: "code-client", since: 4, from: ["oauth_codes", "client_id"], to: ["oauth_clients", "id"], sides: ["right", "right"], cascade: true,
+      label: "for agent", labelAt: [762, 862, "start"],
+      card: "Codes waiting to be swapped, per agent.",
+      onDelete: "CASCADE." },
+    { id: "code-user", since: 4, from: ["oauth_codes", "user_id"], to: ["users", "id"], sides: ["left", "right"], cascade: true,
+      label: "allowed by", labelAt: [392, 470, "middle"],
+      card: "Who pressed Allow.",
+      onDelete: "CASCADE. Revoking also deletes the person's waiting codes." },
   ],
 };
 
@@ -718,8 +811,14 @@ function describeVersion(v) {
 }
 
 // The tables diagram as SVG text. standalone: with its own colors, title and legend, for docs/data-model.svg.
+function canvasHeight(v) {
+  const { height, tall } = MODEL.canvas;
+  return v >= tall.since ? tall.height : height;
+}
+
 function renderER(v, { standalone = false } = {}) {
-  const { width, height } = MODEL.canvas;
+  const { width } = MODEL.canvas;
+  const height = canvasHeight(v);
   const role = standalone
     ? `role="img" aria-label="${esc(describeVersion(v))}"`
     : `role="group" aria-label="Tables at schema ${v}. Select a table, a column or a line for details."`;
@@ -734,7 +833,7 @@ function renderER(v, { standalone = false } = {}) {
   }
   for (const e of visibleEdges(v)) out.push(edgeSvg(e, v, standalone));
   for (const t of visibleTables(v)) out.push(tableSvg(t, v, standalone));
-  if (standalone) out.push(legendSvg(642));
+  if (standalone) out.push(legendSvg(height - 58));
   out.push(`</svg>`);
   return out.join("\n");
 }
@@ -755,7 +854,7 @@ function renderER(v, { standalone = false } = {}) {
   let version = MODEL.version;
   let selection = null; // { kind: "table" | "column" | "edge", table?, column?, edge? }
 
-  const words = ["No tables", "One table", "Two tables", "Three tables", "Four tables", "Five tables", "Six tables"];
+  const words = ["No tables", "One table", "Two tables", "Three tables", "Four tables", "Five tables", "Six tables", "Seven tables", "Eight tables", "Nine tables", "Ten tables"];
 
   function draw() {
     er.innerHTML = renderER(version);
