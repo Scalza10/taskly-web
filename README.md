@@ -2,7 +2,8 @@
 
 A small shared to-do app with named lists: a FastAPI app with a SQLite database and a React +
 TypeScript page. It runs in Docker on the same VM as Reels, behind the same
-Caddy, on its own host name.
+Caddy, on its own host name. AI agents (Claude, Gemini) can connect to it as you
+and work with your lists ([Talking to it from Claude](#talking-to-it-from-claude-mcp)).
 
 ## Run it locally
 
@@ -78,6 +79,20 @@ each test gets its own database, so your local data is untouched) and
 Every `/api` endpoint except login needs the session cookie (401 otherwise).
 Writes from another site (an `Origin` header that isn't this site) get 403.
 
+**For AI agents** (see [Talking to it from Claude](#talking-to-it-from-claude-mcp)), outside `/api`:
+
+| Method and path | What it is |
+|---|---|
+| `POST /mcp` | The MCP endpoint (Streamable HTTP, stateless, JSON answers): the tools below. Needs `Authorization: Bearer <access token>`; without one it answers 401 with `WWW-Authenticate: Bearer resource_metadata=".../.well-known/oauth-protected-resource/mcp"`, which is how an agent finds the sign-in |
+| `GET /.well-known/oauth-protected-resource` (also `…/mcp`) | Which server signs agents in (RFC 9728): this one |
+| `GET /.well-known/oauth-authorization-server` | The OAuth endpoints (RFC 8414): PKCE S256 only, public clients only |
+| `POST /oauth/register` | An agent registers itself (RFC 7591) and gets a `client_id`. Its `redirect_uris` must be Claude's, Gemini's or this machine's (`localhost`), else 400 |
+| `GET /oauth/authorize` | The sign-in page the agent sends you to: your username and password (or nothing, if this browser is logged in to Taskly), then **Allow** or **Cancel** |
+| `POST /oauth/token` | Swaps the one-time code for an access token (1 hour) and a refresh token (90 days, replaced each time it's used); also takes a refresh token |
+
+The site's address in these answers comes from the request (`https://<site>` behind Caddy,
+`http://localhost:8000` locally), so there is nothing to configure.
+
 A task is `{"id", "list_id", "title", "done", "created_by", "done_by",
 "created_at", "updated_at"}`: people by username (`null` for tasks from before
 accounts), times in UTC set by the server (`2026-09-28T12:00:00Z`). Task ids are
@@ -98,11 +113,11 @@ locally (`.venv\Scripts\python.exe -m taskly.admin …`):
 | To | Run |
 |---|---|
 | Create an account | `add-user maria`, then type the password twice, or press Enter to get a random one printed |
-| Set a new password (also logs them out everywhere) | `reset-password maria` |
-| Block someone (logs them out; their name stays on what they did) | `disable-user maria` |
+| Set a new password (also logs them out everywhere and disconnects their agents) | `reset-password maria` |
+| Block someone (logs them out, disconnects their agents; their name stays on what they did) | `disable-user maria` |
 | Let them back in | `enable-user maria` |
-| Log someone out everywhere (a lost phone) | `revoke-sessions maria` |
-| See everyone | `list-users` |
+| Log someone out everywhere and disconnect their agents (a lost phone) | `revoke-sessions maria` |
+| See everyone, with their sessions and connected agents | `list-users` |
 
 A list without an owner (the old list "Taskly", if it was migrated before any account existed) goes to the next account created. Disabling someone hands each list they own to the active member who joined it earliest; with no other active member, the list keeps its (disabled) owner.
 
@@ -119,7 +134,7 @@ Names are 2–32 letters, digits, `.`, `_` or `-`; capitals don't matter when
 logging in, and the page shows the name as it was created.
 
 People can change their own password on the page; that also logs out their
-other devices. Logins last 90 days from the last time the device was used.
+other devices and disconnects their agents. Logins last 90 days from the last time the device was used.
 After 10 wrong passwords for a name (or 30 from one address) in 15 minutes,
 logins wait up to 15 minutes.
 
@@ -156,6 +171,64 @@ never sees or sends your unsent changes.
 reopen the app (still there, "2 changes waiting"), go online, and check another
 device shows the changes.
 
+## Talking to it from Claude (MCP)
+
+Taskly is an MCP server: connect it to Claude once, then ask things like "what's
+still open on Groceries?", "make a list Weekend with bread, eggs and coffee" or
+"tick off the milk". Claude works as you, with the same rights as you have on the page,
+and the page shows the changes on its next sync.
+
+**What the agent can do** (the tools):
+
+| Tool | Does |
+|---|---|
+| `list_lists` | Your lists: name, owner, members, and how many tasks are open and done |
+| `list_tasks` | The open tasks of one list (by name or id) or of every list; `include_done` adds the finished ones |
+| `create_list` | Makes a list you own |
+| `add_tasks` | Adds one or more tasks (up to 50) to a list, by name or id |
+| `complete_task` | Closes a task; `done: false` opens it again |
+
+It can't delete tasks or lists, rename them, or change members; use the page for that.
+
+**Connecting Claude (web, desktop and phone apps).** Your plan must allow custom connectors
+(Pro and Max do). Add it on the web or in the desktop app; the phone app then has it too.
+
+1. In Claude: **Customize** (or Settings) → **Connectors** → **Add custom connector**.
+2. Name: `Taskly`. URL: `https://<site>/mcp`, exactly, without a slash at the end. Leave the
+   OAuth client ID and secret empty (or choose "Register automatically" if it asks).
+3. **Connect**. A Taskly page opens: sign in with your Taskly username and password
+   (if that browser is already logged in to Taskly, it just shows your name), check it says
+   **Claude (claude.ai)**, and press **Allow**.
+4. In a chat, make sure Taskly is switched on in the tools menu, then ask.
+
+Claude may ask you before it uses a tool that changes something; you can let it always allow one.
+
+**Claude Code:**
+
+```bash
+claude mcp add --transport http taskly https://<site>/mcp
+```
+
+Then run `/mcp` in Claude Code, pick `taskly` and sign in in the browser it opens. To try
+your local copy, use `http://localhost:8000/mcp` (uvicorn running, an account made with
+`taskly.admin add-user`).
+
+**Gemini.** The server follows the same standard (MCP with OAuth and dynamic
+registration), and Gemini's sign-in addresses are allowed. As of October 2026 it hasn't
+been tried: the Gemini app's "Custom apps" is US-only and its OAuth sign-in was
+reported to fail on Google's side, and Gemini CLI no longer accepts Google AI Pro/Ultra
+subscriptions. If you try it, add `https://<site>/mcp` the same way and note here what happened.
+
+**Disconnecting.** Remove the connector in Claude. That doesn't tell Taskly, so to cut
+off every agent you connected, change your password on the page, or on the VM run
+`taskly.admin revoke-sessions <name>` (it logs you out everywhere too). Access tokens
+last an hour; an agent left unused for 90 days has to sign in again.
+
+**Behind it:** Taskly signs agents in itself (OAuth 2.1, in `oauth_routes.py`): no
+outside service, and the same accounts, passwords and login throttle as the page. Codes and
+tokens are stored hashed (`oauth_*` tables, see [The database](#the-database)). Caddy needs
+no change: `reverse_proxy taskly:8000` already passes `/mcp`, `/oauth/` and `/.well-known/`.
+
 ## Layout
 
 ```
@@ -164,6 +237,10 @@ taskly/
   settings.py   Settings (DB_PATH, STATIC_DIR, API_DOCS), read from the environment and .env
   db.py         the SQLite connection and the schema migrations
   routes.py     the HTTP endpoints
+  oauth.py      AI agents' sign-in: the queries (clients, codes, grants, tokens) and the allowed redirect addresses
+  oauth_routes.py   the OAuth endpoints and discovery documents (/oauth/*, /.well-known/*)
+  oauth_page.py the sign-in and Allow page for agents (server-made HTML)
+  mcp_server.py /mcp: the MCP tools, and the guard that checks the bearer token
   deps.py       the per-request database connection
   auth.py       the session cookie, the login check, the throttle, the cross-site guard
   passwords.py  password hashing (scrypt)
@@ -198,11 +275,11 @@ docs/
 One SQLite file: `/data/taskly.db` in the container, which is
 `~/taskly/data/taskly.db` on the VM. Deploys back it up and apply new migrations to it, but never replace it.
 
-![The tables in taskly.db at schema 3: users, sessions, lists, list_members and tasks, and the columns that point from one to another](docs/data-model.svg)
+![The tables in taskly.db at schema 4: users, sessions, lists, list_members and tasks, and for AI agents oauth_clients, oauth_codes, oauth_grants and oauth_tokens, and the columns that point from one to another](docs/data-model.svg)
 
 [`docs/data-model.html`](docs/data-model.html) is the same diagram, interactive (open it
 from a clone in a browser): select a table, column or line for its rules and the code that
-uses it, step through schema versions 1 to 3, and see what `/api/sync` sends and what the
+uses it, step through schema versions 1 to 4, and see what `/api/sync` sends and what the
 phone keeps in IndexedDB.
 
 **Changing the schema:** append an SQL string to `MIGRATIONS` in `db.py`, for
