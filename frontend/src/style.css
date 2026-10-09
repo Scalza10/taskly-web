@@ -135,7 +135,7 @@ button:disabled { opacity: 0.5; cursor: default; }
 .blob-big { top: -90px; right: -120px; width: 300px; height: 270px; background: var(--tint-strong); opacity: 0.55; }
 .blob-small { display: none; }
 
-.top, .content { width: 100%; max-width: 1180px; margin: 0 auto; }
+.top, .content { width: 100%; margin: 0 auto; }
 .content { display: flex; flex: 1; flex-direction: column; }
 
 /* ---------- Header ---------- */
