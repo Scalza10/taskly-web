@@ -34,7 +34,8 @@ def test_initialize_and_the_tools(client, token):
                                                "clientInfo": {"name": "test", "version": "1"}})
     assert result["serverInfo"]["name"] == "Taskly" and "complete_task" in result["instructions"]
     tools = {tool["name"]: tool for tool in rpc(client, token, "tools/list")["tools"]}
-    assert set(tools) == {"list_lists", "list_tasks", "create_list", "add_tasks", "complete_task"}
+    assert set(tools) == {"list_lists", "list_tasks", "create_list", "add_tasks", "complete_task", "set_task_status"}
+    assert tools["set_task_status"]["inputSchema"]["properties"]["status"]["enum"] == ["new", "progress", "done"]
     assert tools["list_tasks"]["annotations"]["readOnlyHint"] is True
     assert tools["add_tasks"]["annotations"]["destructiveHint"] is False
 
@@ -94,10 +95,13 @@ def test_create_a_list_and_add_tasks(client, token):
 def test_lists_and_their_counts(client, token):
     groceries = new_list(client, "Groceries")
     milk = new_task(client, groceries["id"], "Milk")
-    new_task(client, groceries["id"], "Eggs")
+    eggs = new_task(client, groceries["id"], "Eggs")
+    new_task(client, groceries["id"], "Bread")
     client.patch(f"/api/tasks/{milk['id']}", json={"done": True})
+    client.patch(f"/api/tasks/{eggs['id']}", json={"status": "progress"})
     [found] = call(client, token, "list_lists")["lists"]
-    assert (found["id"], found["name"], found["open"], found["done"]) == (groceries["id"], "Groceries", 1, 1)
+    assert (found["id"], found["name"], found["open"], found["in_progress"], found["done"]) == (
+        groceries["id"], "Groceries", 2, 1, 1)
 
 
 def test_open_and_all_tasks(client, token):
@@ -116,8 +120,22 @@ def test_open_and_all_tasks(client, token):
 def test_close_and_reopen_a_task(client, token):
     milk = new_task(client, new_list(client)["id"], "Milk")
     closed = call(client, token, "complete_task", task_id=milk["id"])
-    assert closed["done"] is True and closed["done_by"] == "maria"
-    assert call(client, token, "complete_task", task_id=milk["id"], done=False)["done"] is False
+    assert (closed["status"], closed["done"], closed["done_by"]) == ("done", True, "maria")
+    reopened = call(client, token, "complete_task", task_id=milk["id"], done=False)
+    assert (reopened["status"], reopened["done"]) == ("new", False)
+
+
+def test_set_a_tasks_status(client, token):
+    milk = new_task(client, new_list(client)["id"], "Milk")
+    started = call(client, token, "set_task_status", task_id=milk["id"], status="progress")
+    assert (started["status"], started["done"]) == ("progress", False)
+    # An in-progress task isn't finished, so done=false leaves it in progress.
+    assert call(client, token, "complete_task", task_id=milk["id"], done=False)["status"] == "progress"
+    finished = call(client, token, "set_task_status", task_id=milk["id"], status="done")
+    assert (finished["status"], finished["done"], finished["done_by"]) == ("done", True, "maria")
+    assert call(client, token, "set_task_status", task_id=milk["id"], status="new")["done_by"] is None
+    assert "status" in call(client, token, "set_task_status", task_id=milk["id"], status="later")
+    assert "No such task" in call(client, token, "set_task_status", task_id="not-an-id", status="done")
 
 
 def test_errors_are_tool_errors(client, token):
@@ -156,6 +174,8 @@ def test_the_agent_has_the_users_rights(app, settings, client, token):
     assert "no list called" in call(client, token, "list_tasks", list=private["id"])
     assert "No such task" in call(client, token, "complete_task", task_id=secret["id"])
     assert call(client, token, "complete_task", task_id=chore["id"])["done_by"] == "maria"
+    assert "No such task" in call(client, token, "set_task_status", task_id=secret["id"], status="progress")
+    assert call(client, token, "set_task_status", task_id=chore["id"], status="progress")["status"] == "progress"
     assert call(client, token, "add_tasks", list="shared", titles=["More"])["added"][0]["created_by"] == "maria"
 
 
