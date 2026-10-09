@@ -1,9 +1,10 @@
 // The Board screen: the current list's tasks in three columns, New, In progress and Done. Each
-// card's button moves its task on: Start, Finish, Reopen. On a phone the columns stack.
-import { ArrowRight } from "lucide-react";
+// card's button moves its task on: Start, Finish, Reopen; an In progress card also has Back (to
+// New). On a phone the columns stack.
+import { ArrowLeft, ArrowRight } from "lucide-react";
 import type { TaskList } from "./api";
 import { Avatar, Empty } from "./Chrome";
-import { STAGES } from "./stages";
+import { STAGES, stage } from "./stages";
 import type { Enqueue } from "./useLocal";
 import { useWide } from "./useWide";
 
@@ -12,7 +13,7 @@ export function BoardScreen({ list, enqueue }: { list: TaskList; enqueue: Enqueu
   return (
     <div className="screen board-screen">
       <h1 className="visually-hidden">{list.name}</h1>
-      {STAGES.map(({ status, label, action, next }) => {
+      {STAGES.map(({ status, label, action, next, back }) => {
         const tasks = list.tasks.filter((task) => task.status === status);
         return (
           <section key={status} className={`column column-${status}`} aria-label={label}>
@@ -30,6 +31,18 @@ export function BoardScreen({ list, enqueue }: { list: TaskList; enqueue: Enqueu
                     <span className="by">
                       {wide ? <><Avatar name={task.created_by} size="sm" />{task.created_by}</> : `added by ${task.created_by}`}
                     </span>
+                  )}
+                  {back && (
+                    <button
+                      type="button"
+                      className="action"
+                      aria-label={`Back to ${stage(back).label}: ${task.title}`}
+                      title={`Back to ${stage(back).label}`}
+                      onClick={() => void enqueue({ method: "PATCH", path: `/api/tasks/${task.id}`, body: { status: back } })}
+                    >
+                      <ArrowLeft size={13} strokeWidth={2.5} aria-hidden="true" />
+                      Back
+                    </button>
                   )}
                   <button
                     type="button"

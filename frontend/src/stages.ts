@@ -2,9 +2,10 @@
 // buttons, the List's headline and the Focus screen's "Working on".
 import type { Status, Task } from "./api";
 
-export const STAGES: { status: Status; label: string; action: string; next: Status }[] = [
+// back: the stage a task can be sent back to (In progress → New, if it was started too soon).
+export const STAGES: { status: Status; label: string; action: string; next: Status; back?: Status }[] = [
   { status: "new", label: "New", action: "Start", next: "progress" },
-  { status: "progress", label: "In progress", action: "Finish", next: "done" },
+  { status: "progress", label: "In progress", action: "Finish", next: "done", back: "new" },
   { status: "done", label: "Done", action: "Reopen", next: "new" },
 ];
 
