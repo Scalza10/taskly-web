@@ -128,6 +128,13 @@ MIGRATIONS = [
     );
     CREATE INDEX oauth_tokens_grant_id ON oauth_tokens(grant_id);
     """,
+    # 5: tasks move through new, in progress and done (the page's board) instead of open or done.
+    # Done tasks keep their done_by; the API still sends done (status = 'done') for older pages and agents.
+    """
+    ALTER TABLE tasks ADD COLUMN status TEXT NOT NULL DEFAULT 'new' CHECK (status IN ('new', 'progress', 'done'));
+    UPDATE tasks SET status = 'done' WHERE done;
+    ALTER TABLE tasks DROP COLUMN done;
+    """,
 ]
 
 

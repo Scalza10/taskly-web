@@ -96,7 +96,7 @@ def test_migration_3_moves_todos_into_the_taskly_list(tmp_path, monkeypatch):
                 ('new', 0, NULL, NULL, '2026-02-01T00:00:00Z', '2026-02-01T00:00:00Z');
         """)
 
-    assert db.migrate(path) == len(db.MIGRATIONS)
+    migrate_to(path, 3, monkeypatch)  # exactly 3: migration 5 turns done into status
 
     [taskly] = rows(path, "SELECT * FROM lists")
     assert taskly["name"] == "Taskly"
@@ -132,6 +132,34 @@ def test_migration_3_without_users_leaves_the_list_unowned(tmp_path, monkeypatch
     assert taskly["owner_id"] is None
     assert rows(path, "SELECT * FROM list_members") == []
     assert [t["title"] for t in rows(path, "SELECT title FROM tasks")] == ["from before accounts"]
+
+
+def test_migration_5_turns_done_into_a_status(tmp_path, monkeypatch):
+    path = str(tmp_path / "taskly.db")
+    migrate_to(path, 4, monkeypatch)
+    with sqlite3.connect(path) as conn:
+        conn.executescript("""
+            INSERT INTO users (username, password_hash) VALUES ('maria', 'x');
+            INSERT INTO lists (id, name, owner_id) VALUES ('l1', 'Food', 1);
+            INSERT INTO tasks (id, list_id, title, done, done_by, updated_at) VALUES
+                ('t1', 'l1', 'Milk', 1, 1, '2026-01-02T00:00:00Z'),
+                ('t2', 'l1', 'Eggs', 0, NULL, '2026-01-03T00:00:00Z');
+        """)
+
+    assert db.migrate(path) == len(db.MIGRATIONS)
+
+    assert rows(path, "SELECT id, status, done_by, updated_at FROM tasks ORDER BY id") == [
+        {"id": "t1", "status": "done", "done_by": 1, "updated_at": "2026-01-02T00:00:00Z"},
+        {"id": "t2", "status": "new", "done_by": None, "updated_at": "2026-01-03T00:00:00Z"},
+    ]
+    assert "done" not in [c["name"] for c in rows(path, "PRAGMA table_info(tasks)")]
+    with sqlite3.connect(path) as conn:
+        try:
+            conn.execute("UPDATE tasks SET status = 'later' WHERE id = 't1'")
+        except sqlite3.IntegrityError:
+            pass
+        else:
+            raise AssertionError("status must be new, progress or done")
 
 
 def test_deleting_a_list_deletes_its_tasks_and_members(tmp_path):

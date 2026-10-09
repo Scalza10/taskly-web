@@ -30,7 +30,7 @@ def test_create_returns_the_task_with_its_author(conn, maria, groceries):
     task, created = tasks.create_task(conn, task_id, groceries, "Milk", maria["id"])
     assert created is True
     assert task["id"] == task_id and task["list_id"] == groceries
-    assert (task["title"], task["done"], task["created_by"], task["done_by"]) == ("Milk", False, "maria", None)
+    assert (task["title"], task["status"], task["done"], task["created_by"], task["done_by"]) == ("Milk", "new", False, "maria", None)
     assert task["created_at"].endswith("Z")
 
 
@@ -46,11 +46,11 @@ def test_creating_the_same_id_again_changes_nothing(conn, maria, groceries):
 def test_update_records_who_ticked(conn, maria, tom, groceries):
     task, _ = tasks.create_task(conn, new_id(), groceries, "Milk", maria["id"])
     done = tasks.update_task(conn, task["id"], tom["id"], done=True)
-    assert (done["done"], done["done_by"]) == (True, "tom")
+    assert (done["status"], done["done"], done["done_by"]) == ("done", True, "tom")
     renamed = tasks.update_task(conn, task["id"], maria["id"], title="Oat milk")
     assert (renamed["title"], renamed["done_by"]) == ("Oat milk", "tom")
     undone = tasks.update_task(conn, task["id"], maria["id"], done=False)
-    assert undone["done_by"] is None
+    assert (undone["status"], undone["done"], undone["done_by"]) == ("new", False, None)
     assert tasks.update_task(conn, new_id(), maria["id"], done=True) is None
 
 
@@ -60,13 +60,38 @@ def test_delete(conn, maria, groceries):
     assert tasks.delete_task(conn, task["id"]) is False
 
 
-def test_tasks_sort_open_first_then_newest(conn, maria, groceries):
+def test_status_moves_a_task_along(conn, maria, tom, groceries):
+    task, _ = tasks.create_task(conn, new_id(), groceries, "Milk", maria["id"])
+    started = tasks.update_task(conn, task["id"], tom["id"], status="progress")
+    assert (started["status"], started["done"], started["done_by"]) == ("progress", False, None)
+    finished = tasks.update_task(conn, task["id"], tom["id"], status="done")
+    assert (finished["status"], finished["done"], finished["done_by"]) == ("done", True, "tom")
+    back = tasks.update_task(conn, task["id"], maria["id"], status="progress")
+    assert (back["status"], back["done_by"]) == ("progress", None)
+
+
+def test_unticking_reopens_only_a_done_task(conn, maria, groceries):
+    task, _ = tasks.create_task(conn, new_id(), groceries, "Milk", maria["id"])
+    tasks.update_task(conn, task["id"], maria["id"], status="progress")
+    # An older page (or an agent) that only knows done: an in-progress task isn't done already.
+    assert tasks.update_task(conn, task["id"], maria["id"], done=False)["status"] == "progress"
+    assert tasks.update_task(conn, task["id"], maria["id"], done=True)["status"] == "done"
+    assert tasks.update_task(conn, task["id"], maria["id"], done=False)["status"] == "new"
+
+
+def test_status_beats_done(conn, maria, groceries):
+    task, _ = tasks.create_task(conn, new_id(), groceries, "Milk", maria["id"])
+    assert tasks.update_task(conn, task["id"], maria["id"], done=True, status="progress")["status"] == "progress"
+
+
+def test_tasks_sort_open_first_then_oldest(conn, maria, groceries):
     ids = {}
-    for title in ["first", "second", "third"]:
+    for title in ["first", "second", "third", "fourth"]:
         ids[title] = tasks.create_task(conn, new_id(), groceries, title, maria["id"])[0]["id"]
-    tasks.update_task(conn, ids["third"], maria["id"], done=True)
-    # All three share a created_at second; insertion order breaks the tie.
-    assert [t["title"] for t in tasks.list_tasks(conn, groceries)] == ["second", "first", "third"]
+    tasks.update_task(conn, ids["first"], maria["id"], done=True)
+    tasks.update_task(conn, ids["third"], maria["id"], status="progress")
+    # All four share a created_at second; insertion order breaks the tie.
+    assert [t["title"] for t in tasks.list_tasks(conn, groceries)] == ["second", "third", "fourth", "first"]
 
 
 def test_snapshot_has_only_my_lists_with_members_and_tasks(conn, maria, tom, groceries):

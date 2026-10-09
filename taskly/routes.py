@@ -4,7 +4,7 @@ Every list or task action first asks the user's role in the list: none is a 404 
 didn't exist, so ids can't be probed), a member doing an owner's action is a 403."""
 
 import sqlite3
-from typing import Annotated
+from typing import Annotated, Literal
 from uuid import UUID
 
 from fastapi import APIRouter, HTTPException, Response
@@ -34,7 +34,8 @@ class TaskCreate(BaseModel):
 
 class TaskUpdate(BaseModel):
     title: Title | None = None
-    done: bool | None = None
+    done: bool | None = None  # what pages before the board send; status wins if both are given
+    status: Literal["new", "progress", "done"] | None = None
 
 
 router = APIRouter()
@@ -134,7 +135,7 @@ def create_task(body: TaskCreate, response: Response, user: CurrentUser, conn: C
 @router.patch("/api/tasks/{task_id}")
 def update_task(task_id: UUID, body: TaskUpdate, user: CurrentUser, conn: Conn) -> dict:
     task_for(conn, task_id, user)
-    task = tasks.update_task(conn, str(task_id), user["id"], title=body.title, done=body.done)
+    task = tasks.update_task(conn, str(task_id), user["id"], title=body.title, done=body.done, status=body.status)
     if task is None:  # deleted since task_for
         raise HTTPException(status_code=404, detail="No such task")
     return task

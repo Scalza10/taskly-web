@@ -88,7 +88,7 @@ def test_create_task(client):
     response = client.post("/api/tasks", json={"id": task_id, "list_id": made["id"], "title": "  Milk "})
     assert response.status_code == 201
     task = response.json()
-    assert (task["id"], task["list_id"], task["title"], task["done"]) == (task_id, made["id"], "Milk", False)
+    assert (task["id"], task["list_id"], task["title"], task["status"], task["done"]) == (task_id, made["id"], "Milk", "new", False)
     assert (task["created_by"], task["done_by"]) == ("maria", None)
 
 
@@ -128,15 +128,32 @@ def test_update_and_delete_task(client):
     assert client.patch(f"/api/tasks/{task['id']}", json={"done": False}).status_code == 404
 
 
+def test_status_changes(client):
+    made = new_list(client)
+    task = new_task(client, made["id"])
+    path = f"/api/tasks/{task['id']}"
+    started = client.patch(path, json={"status": "progress"}).json()
+    assert (started["status"], started["done"], started["done_by"]) == ("progress", False, None)
+    assert client.patch(path, json={"done": False}).json()["status"] == "progress"  # an older page unticking
+    finished = client.patch(path, json={"status": "done"}).json()
+    assert (finished["status"], finished["done"], finished["done_by"]) == ("done", True, "maria")
+    assert client.patch(path, json={"done": False}).json()["status"] == "new"
+    assert client.patch(path, json={"done": True, "status": "progress"}).json()["status"] == "progress"
+    assert client.patch(path, json={"status": "later"}).status_code == 422
+    assert client.patch(path, json={"status": None}).json()["status"] == "progress"
+
+
 def test_sync_sorts_lists_by_name_and_tasks_open_first(client):
     new_list(client, "zoo")
     food = new_list(client, "Food")
     first = new_task(client, food["id"], "first")
-    new_task(client, food["id"], "second")
+    second = new_task(client, food["id"], "second")
+    new_task(client, food["id"], "third")
     client.patch(f"/api/tasks/{first['id']}", json={"done": True})
+    client.patch(f"/api/tasks/{second['id']}", json={"status": "progress"})
     seen = sync(client)
     assert [l["name"] for l in seen["lists"]] == ["Food", "zoo"]
-    assert [t["title"] for t in seen["lists"][0]["tasks"]] == ["second", "first"]
+    assert [t["title"] for t in seen["lists"][0]["tasks"]] == ["second", "third", "first"]
 
 
 def test_lists_survive_a_restart(settings):
