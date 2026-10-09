@@ -12,7 +12,7 @@ from fastapi import APIRouter, Depends, FastAPI, HTTPException, Request, Respons
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
-from . import passwords, sessions, users
+from . import oauth, passwords, sessions, users
 from .deps import Conn
 
 COOKIE = "taskly_session"
@@ -187,8 +187,9 @@ def change_password(body: PasswordChange, request: Request, user: CurrentUser, c
         users.set_password(conn, user["id"], body.new)
     except users.UserError as error:
         raise HTTPException(status_code=422, detail=str(error)) from None
-    # Changing your password is how you sign out a lost phone.
+    # Changing your password is how you sign out a lost phone, and disconnect your agents.
     sessions.delete_user_sessions(conn, user["id"], keep_token=request.cookies.get(COOKIE))
+    oauth.delete_user_grants(conn, user["id"])
 
 
 def _same_origin(request: Request) -> bool:

@@ -11,7 +11,7 @@ import sys
 from collections.abc import Callable
 from contextlib import closing
 
-from . import db, lists, sessions, users
+from . import db, lists, oauth, sessions, users
 from .settings import Settings
 
 
@@ -48,12 +48,18 @@ def add_user(conn, args, prompt) -> None:
         print(f"Password: {password}")
 
 
+def _log_out(conn, user: dict) -> str:
+    """End a user's sessions and disconnect their agents (MCP connectors)."""
+    ended = sessions.delete_user_sessions(conn, user["id"])
+    disconnected = oauth.delete_user_grants(conn, user["id"])
+    return f"{ended} sessions ended, {disconnected} agents disconnected"
+
+
 def reset_password(conn, args, prompt) -> None:
     user = _user(conn, args.name)
     password, generated = _ask_password(prompt, allow_generated=True)
     users.set_password(conn, user["id"], password)
-    ended = sessions.delete_user_sessions(conn, user["id"])
-    print(f"New password for {user['username']}; {ended} sessions ended.")
+    print(f"New password for {user['username']}; {_log_out(conn, user)}.")
     if generated:
         print(f"Password: {password}")
 
@@ -63,8 +69,7 @@ def disable_user(conn, args, prompt) -> None:
     for name, heir in lists.hand_over(conn, user["id"]):
         print(f"{name} now belongs to {heir}.")
     users.set_disabled(conn, user["id"], True)
-    ended = sessions.delete_user_sessions(conn, user["id"])
-    print(f"Disabled {user['username']}; {ended} sessions ended.")
+    print(f"Disabled {user['username']}; {_log_out(conn, user)}.")
 
 
 def enable_user(conn, args, prompt) -> None:
@@ -75,22 +80,22 @@ def enable_user(conn, args, prompt) -> None:
 
 def revoke_sessions(conn, args, prompt) -> None:
     user = _user(conn, args.name)
-    ended = sessions.delete_user_sessions(conn, user["id"])
-    print(f"{user['username']}: {ended} sessions ended.")
+    print(f"{user['username']}: {_log_out(conn, user)}.")
 
 
 def list_users(conn, args, prompt) -> None:
     for user in users.list_users(conn):
         state = "disabled" if user["disabled_at"] else "active"
-        print(f"{user['username']:<32} {state:<8} {user['sessions']} sessions  (created {user['created_at']})")
+        print(f"{user['username']:<32} {state:<8} {user['sessions']} sessions  {user['agents']} agents"
+              f"  (created {user['created_at']})")
 
 
 COMMANDS = {
     "add-user": (add_user, "create an account"),
-    "reset-password": (reset_password, "set a new password and log out everywhere"),
-    "disable-user": (disable_user, "block logins and log out everywhere"),
+    "reset-password": (reset_password, "set a new password, log out everywhere, disconnect agents"),
+    "disable-user": (disable_user, "block logins, log out everywhere, disconnect agents"),
     "enable-user": (enable_user, "allow logins again"),
-    "revoke-sessions": (revoke_sessions, "log a user out everywhere"),
+    "revoke-sessions": (revoke_sessions, "log a user out everywhere and disconnect their agents"),
     "list-users": (list_users, "show every account"),
 }
 

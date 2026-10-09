@@ -2,7 +2,7 @@ from contextlib import closing
 
 import pytest
 
-from taskly import admin, db, lists, sessions, users
+from taskly import admin, db, lists, oauth, sessions, users
 from conftest import PASSWORD, add_user
 
 
@@ -18,6 +18,20 @@ def run(settings, *argv, prompt=answers()):
 
 def open_db(settings):
     return closing(db.connect(settings.db_path))
+
+
+def connect_an_agent(settings, user) -> str:
+    """An MCP connector's access token for user, made straight in the database."""
+    with open_db(settings) as conn:
+        client = oauth.register_client(conn, "Claude", ["https://claude.ai/api/mcp/auth_callback"])
+        code = oauth.create_code(conn, client_id=client["id"], user_id=user["id"], redirect_uri="x",
+                                 code_challenge="c", resource="r")
+        return oauth.create_grant(conn, oauth.take_code(conn, code))["access_token"]
+
+
+def agent_works(settings, token) -> bool:
+    with open_db(settings) as conn:
+        return oauth.token_user(conn, token, "r") is not None
 
 
 def test_add_user_with_a_typed_password(settings):
@@ -74,8 +88,18 @@ def test_revoke_sessions(settings, capsys):
     with open_db(settings) as conn:
         sessions.create_session(conn, maria["id"])
         sessions.create_session(conn, maria["id"])
+    agent = connect_an_agent(settings, maria)
     assert run(settings, "revoke-sessions", "maria") == 0
-    assert "2 sessions ended" in capsys.readouterr().out
+    assert "2 sessions ended, 1 agents disconnected" in capsys.readouterr().out
+    assert not agent_works(settings, agent)
+
+
+@pytest.mark.parametrize("command, prompt", [("reset-password", answers("a new password", "a new password")),
+                                             ("disable-user", answers())])
+def test_agents_are_disconnected_with_the_sessions(settings, command, prompt):
+    agent = connect_an_agent(settings, add_user(settings, "maria"))
+    assert run(settings, command, "maria", prompt=prompt) == 0
+    assert not agent_works(settings, agent)
 
 
 def test_list_users(settings, capsys):
@@ -85,7 +109,7 @@ def test_list_users(settings, capsys):
     capsys.readouterr()
     assert run(settings, "list-users") == 0
     lines = capsys.readouterr().out.splitlines()
-    assert lines[0].split()[:4] == ["maria", "active", "0", "sessions"]
+    assert lines[0].split()[:6] == ["maria", "active", "0", "sessions", "0", "agents"]
     assert lines[1].split()[:2] == ["tom", "disabled"]
 
 

@@ -77,7 +77,8 @@ def set_disabled(conn: sqlite3.Connection, user_id: int, disabled: bool) -> None
 def list_users(conn: sqlite3.Connection) -> list[dict]:
     rows = conn.execute(
         """SELECT u.id, u.username, u.created_at, u.disabled_at,
-                  (SELECT COUNT(*) FROM sessions s WHERE s.user_id = u.id) AS sessions
+                  (SELECT COUNT(*) FROM sessions s WHERE s.user_id = u.id) AS sessions,
+                  (SELECT COUNT(*) FROM oauth_grants g WHERE g.user_id = u.id) AS agents
            FROM users u ORDER BY u.username"""
     ).fetchall()
     return [dict(row) for row in rows]

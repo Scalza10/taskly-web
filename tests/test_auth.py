@@ -3,7 +3,7 @@ import json
 import pytest
 from fastapi.testclient import TestClient
 
-from conftest import PASSWORD, add_user, login
+from conftest import PASSWORD, add_user, connect_agent, login
 
 
 def test_login_sets_a_safe_cookie(anon, settings):
@@ -86,6 +86,14 @@ def test_change_password_logs_out_other_devices(app, client, settings):
     assert client.get("/api/me").status_code == 200
     with TestClient(app) as laptop:
         login(laptop, "maria", "a brand new one")
+
+
+def test_change_password_disconnects_agents(client):
+    token = connect_agent(client)["access_token"]
+    assert client.post("/api/me/password", json={"current": PASSWORD, "new": "a brand new one"}).status_code == 204
+    response = client.post("/mcp", json={"jsonrpc": "2.0", "id": 1, "method": "tools/list"},
+                           headers={"Authorization": f"Bearer {token}", "Accept": "application/json, text/event-stream"})
+    assert response.status_code == 401
 
 
 def test_change_password_needs_the_current_one(client):
