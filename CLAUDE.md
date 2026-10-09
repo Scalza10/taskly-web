@@ -61,6 +61,10 @@ The VM runs one Caddy (`~/proxy`, owns 80/443) and several apps, each its own Co
 - **The Caddyfile is a read-only single-file bind mount.** `caddy fmt --overwrite` can't run in the service container; use `docker run --rm -v ~/proxy/Caddyfile:/etc/caddy/Caddyfile caddy:2 caddy fmt --overwrite /etc/caddy/Caddyfile`. An editor that replaces the file (new inode) leaves the container on the old copy until `docker compose up -d --force-recreate caddy`. `nano` writes in place. The "Caddyfile input is not formatted" warning is harmless.
 - **The real site name stays out of the repo** like the VM's IP: docs say `<site>`; it lives in `deploy.local.psd1` and `~/proxy/Caddyfile`.
 
+### MCP connector (found on its first deploy, October 2026)
+- **claude.ai connected on the first try** with dynamic registration and no client secret; it sends no `Origin` to `/mcp`, so `Guard`'s check is fine. Check after a deploy: `/.well-known/oauth-authorization-server` must say `"issuer": "https://<site>"` (https comes from Caddy's `X-Forwarded-Proto` and uvicorn's `--proxy-headers`).
+- **Google Safe Browsing flagged the site as phishing** ("Dangerous site" in Chrome and Safari) right after the deploy: a password form on a free dynamic-DNS name, and the sign-in page names "Claude (claude.ai)". Only browsers are affected (the sign-in tab, the page); Claude's server calls are not. Lifting it is a Search Console review (README, "Talking to it from Claude"); a domain of our own is the lasting fix.
+
 ### App
 - **On Windows, `mimetypes` can map `.js` to `text/plain`** from the registry, and browsers then refuse the module script. `main.py` forces `text/javascript`; `test_page_and_its_files_are_served` guards it.
 - **`Settings` reads `.env` from the working directory.** Tests build settings with `tests/conftest.py::make_settings(tmp_path)`, which passes `_env_file=None`. Use it.

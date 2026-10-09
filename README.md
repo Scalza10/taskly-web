@@ -203,6 +203,16 @@ It can't delete tasks or lists, rename them, or change members; use the page for
 
 Claude may ask you before it uses a tool that changes something; you can let it always allow one.
 
+This worked on the first try on claude.ai (October 2026), with the OAuth fields left empty.
+
+**If Chrome shows a red "Dangerous site" page** for the site (or for the sign-in tab while
+connecting): that's Google Safe Browsing, not the server. Free dynamic-DNS names like ours
+share a poor reputation, and a password form there gets flagged as phishing. To get past it
+yourself: **Details → visit this unsafe site**. To get it lifted: in Google Search Console, add
+the site as a URL-prefix property, verify it (a DNS TXT record; DuckDNS sets one with
+`https://www.duckdns.org/update?domains=<name>&token=<token>&txt=<value>`), then **Security
+issues → Request review**. A domain of our own is the lasting fix.
+
 **Claude Code:**
 
 ```bash
