@@ -96,7 +96,7 @@ def test_migration_3_moves_todos_into_the_taskly_list(tmp_path, monkeypatch):
                 ('new', 0, NULL, NULL, '2026-02-01T00:00:00Z', '2026-02-01T00:00:00Z');
         """)
 
-    assert db.migrate(path) == 3
+    assert db.migrate(path) == len(db.MIGRATIONS)
 
     [taskly] = rows(path, "SELECT * FROM lists")
     assert taskly["name"] == "Taskly"
