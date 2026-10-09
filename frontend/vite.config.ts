@@ -31,11 +31,23 @@ export default defineConfig({
       },
       workbox: {
         // The page handles data itself (store.ts, sync.ts); the service worker only serves the page's files.
-        navigateFallbackDenylist: [/^\/api\//, /^\/health$/, /^\/docs/, /^\/redoc/, /^\/openapi\.json$/],
+        // /oauth/ is the server's sign-in page for AI agents (MCP); it must never get index.html.
+        navigateFallbackDenylist: [/^\/api\//, /^\/health$/, /^\/docs/, /^\/redoc/, /^\/openapi\.json$/,
+          /^\/oauth\//, /^\/mcp/, /^\/\.well-known\//],
       },
     }),
   ],
   build: { outDir: "../taskly/static", emptyOutDir: true },
-  server: { port: 5173, strictPort: true, proxy: { "/api": { target: backend }, "/health": { target: backend } } },
+  server: {
+    port: 5173,
+    strictPort: true,
+    proxy: {
+      "/api": { target: backend },
+      "/health": { target: backend },
+      "/oauth": { target: backend },
+      "/mcp": { target: backend },
+      "/.well-known": { target: backend },
+    },
+  },
   test: { environment: "node" },
 });
