@@ -66,14 +66,14 @@ each test gets its own database, so your local data is untouched) and
 | `POST /api/logout` | | 204; ends this device's session and tells the browser to clear the site's saved data (`Clear-Site-Data: "storage"`) |
 | `GET /api/me` | | `{"username"}` |
 | `POST /api/me/password` | `{"current", "new"}` | 204; logs out your other devices. 403 if `current` is wrong, 422 if `new` is under 6 characters |
-| `GET /api/sync` | | Everything you can see: `{"me", "lists": [{"id", "name", "owner", "role", "members", "tasks": [...]}]}`, lists by name, tasks open first then newest |
+| `GET /api/sync` | | Everything you can see: `{"me", "lists": [{"id", "name", "owner", "role", "members", "tasks": [...]}]}`, lists by name, tasks not done first (in progress too), then oldest first |
 | `POST /api/lists` | `{"name": "Groceries"}` | 201 and the list; you own it |
 | `PATCH /api/lists/{id}` | `{"name": ...}` | The list. Owner only |
 | `DELETE /api/lists/{id}` | | 204; its tasks go too. Owner only |
 | `POST /api/lists/{id}/members` | `{"username": "tom"}` | 201 (200 if already in). Owner only; 404 for a name that is unknown or disabled |
 | `DELETE /api/lists/{id}/members/{username}` | | 204. The owner removes anyone; anyone can remove themselves (leave), except the owner (409) |
 | `POST /api/tasks` | `{"id": "<uuid>", "list_id": "<uuid>", "title": "Milk"}` | 201 and the task. The same `id` again in the same list: 200 and the stored task (a safe retry). The same `id` in another list: 409 |
-| `PATCH /api/tasks/{id}` | `{"title": ...}` and/or `{"done": true}` | The task |
+| `PATCH /api/tasks/{id}` | Any of `{"title", "status", "done"}` | The task. `status` is `"new"`, `"progress"` or `"done"` (anything else: 422). `done: true` is status done; `done: false` reopens a done task as new and leaves one in progress alone. `status` wins if both are sent. Finishing records you as `done_by`; any other status clears it |
 | `DELETE /api/tasks/{id}` | | 204 |
 
 Every `/api` endpoint except login needs the session cookie (401 otherwise).
@@ -93,8 +93,10 @@ Writes from another site (an `Origin` header that isn't this site) get 403.
 The site's address in these answers comes from the request (`https://<site>` behind Caddy,
 `http://localhost:8000` locally), so there is nothing to configure.
 
-A task is `{"id", "list_id", "title", "done", "created_by", "done_by",
-"created_at", "updated_at"}`: people by username (`null` for tasks from before
+A task is `{"id", "list_id", "title", "status", "done", "created_by", "done_by",
+"created_at", "updated_at"}`: `status` is `"new"`, `"progress"` (in progress) or
+`"done"`, and `done` is `status == "done"` (kept for pages and agents from before
+statuses); people by username (`null` for tasks from before
 accounts), times in UTC set by the server (`2026-09-28T12:00:00Z`). Task ids are
 UUIDs the page makes itself. Titles are trimmed and 1–500 characters, list names
 1–100 (422 otherwise). Anything in a list you're not in answers 404, as if it
@@ -182,11 +184,12 @@ and the page shows the changes on its next sync.
 
 | Tool | Does |
 |---|---|
-| `list_lists` | Your lists: name, owner, members, and how many tasks are open and done |
-| `list_tasks` | The open tasks of one list (by name or id) or of every list; `include_done` adds the finished ones |
+| `list_lists` | Your lists: name, owner, members, and how many tasks are open (in progress included), in progress, and done |
+| `list_tasks` | The open tasks of one list (by name or id) or of every list, oldest first, each with its `status`; `include_done` adds the finished ones |
 | `create_list` | Makes a list you own |
 | `add_tasks` | Adds one or more tasks (up to 50) to a list, by name or id |
 | `complete_task` | Closes a task; `done: false` opens it again |
+| `set_task_status` | Moves a task to `new`, `progress` (in progress) or `done`, like the page's board |
 
 It can't delete tasks or lists, rename them, or change members; use the page for that.
 
