@@ -269,10 +269,14 @@ taskly/
 frontend/
   src/          the page: React + TypeScript (api.ts calls the API; sync.ts sends the queued task changes and downloads /api/sync)
     store.ts, view.ts, sync.ts, device.ts, useLocal.ts, StatusLine.tsx   the device's copy (IndexedDB) and its queue of unsent changes, what the screen shows, syncing, the page's one store and sync, the hook that triggers syncs, the "N changes waiting" line
-    Login.tsx, AccountBar.tsx, ChangePassword.tsx   the login screen, the bar with your name, the password form
-    ListsPage.tsx, ListPicker.tsx, NewList.tsx, ListSettings.tsx   the lists page: the picker, new list, members and rename/delete
-    Tasks.tsx, TaskItem.tsx   the open list's tasks
-    pickList.ts   which list is open
+    Login.tsx, Header.tsx, ChangePassword.tsx   the login screen, the header (screen tabs, your name, light/dark, the menu) and the phone's tab bar, the password form
+    ListsPage.tsx   everything after logging in: the header and the List, Board and Focus screens
+    ListScreen.tsx, TaskItem.tsx, NewList.tsx, ListSettings.tsx   the List screen: the picker, the add bar, the tasks, new list, members and rename/delete
+    BoardScreen.tsx   the Board: New, In progress and Done columns
+    FocusScreen.tsx, timer.ts, useTimer.ts   the Focus screen's pomodoro timer (kept on the device only)
+    stages.ts     a task's stage (status): labels, the Board's buttons, the List's headline
+    Chrome.tsx, style.css, useWide.ts   shared pieces (wordmark, avatar, blobs), the "Organic" look (Archivo, bundled locally), desktop vs phone at 900px
+    pickList.ts, screen.ts   which list and which screen are open
     messages.ts   the text shown for API errors
   public/       the icon (icon.svg) and the PNGs made from it (`npm --prefix frontend run icons`)
   vite.config.ts   Vite and the PWA plugin (manifest and service worker)
