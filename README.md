@@ -272,10 +272,10 @@ frontend/
     Login.tsx, Header.tsx, ChangePassword.tsx   the login screen, the header (screen tabs, your name, light/dark, the menu) and the phone's tab bar, the password form
     ListsPage.tsx   everything after logging in: the header and the List, Board and Focus screens
     ListScreen.tsx, TaskItem.tsx, NewList.tsx, ListSettings.tsx   the List screen: the picker, the add bar, the tasks, new list, members and rename/delete
-    BoardScreen.tsx   the Board: New, In progress and Done columns
+    BoardScreen.tsx   the Board: New, In progress and Done columns; buttons move a card, and on a desktop so does dragging it
     ClearDone.tsx   "Clear done" (List and Board): deletes a list's finished tasks after an inline confirmation
     FocusScreen.tsx, timer.ts, useTimer.ts   the Focus screen's pomodoro timer (kept on the device only)
-    stages.ts     a task's stage (status): labels, the Board's buttons, the List's headline
+    stages.ts     a task's stage (status): labels, the Board's buttons and drops, the List's headline
     Chrome.tsx, style.css, useWide.ts   shared pieces (wordmark, avatar, blobs), the "Organic" look (Archivo, bundled locally), desktop vs phone at 900px
     pickList.ts, screen.ts   which list and which screen are open
     messages.ts   the text shown for API errors

@@ -371,6 +371,10 @@ button.clear-done { align-self: flex-start; }
 .count { min-width: 26px; padding: 2px 9px; border-radius: 999px; background: var(--raised); font-size: 12px; font-weight: 600; text-align: center; }
 
 .board-card { display: flex; flex-direction: column; gap: 12px; padding: 14px; border-radius: 18px; background: var(--raised); box-shadow: var(--shadow-sm); }
+/* Dragging a card (desktop): it grabs, fades while it moves, and the column it would land in lights up. */
+.board-card[draggable="true"] { cursor: grab; }
+.board-card.dragging { opacity: 0.4; }
+.column.drop-target { outline: 2px solid var(--primary); outline-offset: -2px; }
 .card-title { font-size: 15px; font-weight: 500; line-height: 1.35; overflow-wrap: anywhere; }
 .board-card.done .card-title { text-decoration: line-through; opacity: 0.5; }
 .card-foot { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; }

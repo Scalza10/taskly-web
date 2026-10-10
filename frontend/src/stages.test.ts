@@ -1,8 +1,8 @@
 import { expect, test } from "vitest";
 import type { Status, Task } from "./api";
-import { headline, stage, workingOn } from "./stages";
+import { headline, moveChange, stage, workingOn } from "./stages";
 
-const task = (title: string, status: Status) => ({ title, status }) as Task;
+const task = (title: string, status: Status) => ({ id: title, title, status }) as Task;
 
 test("the headline counts the tasks not done, in words up to nine", () => {
   expect(headline([])).toBe("All clear.");
@@ -23,4 +23,10 @@ test("working on: the first task in progress, else the first new one", () => {
   expect(workingOn([task("a", "new"), task("b", "progress"), task("c", "progress")])?.title).toBe("b");
   expect(workingOn([task("a", "done"), task("b", "new")])?.title).toBe("b");
   expect(workingOn([task("a", "done")])).toBeUndefined();
+});
+
+test("dropping a card on another column moves it there; on its own column, nothing", () => {
+  expect(moveChange(task("a", "new"), "done")).toEqual({ method: "PATCH", path: "/api/tasks/a", body: { status: "done" } });
+  expect(moveChange(task("a", "done"), "progress")).toEqual({ method: "PATCH", path: "/api/tasks/a", body: { status: "progress" } });
+  expect(moveChange(task("a", "progress"), "progress")).toBeUndefined();
 });
