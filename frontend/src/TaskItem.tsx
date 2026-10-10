@@ -1,15 +1,20 @@
 // One task on the List screen: the round box ticks it (unticking sends it back to New), click the
 // title to rename (Enter or leaving the field saves, Escape cancels), the chip shows its stage,
-// × deletes.
+// × deletes. A task opened from search scrolls into view and lights up for a moment (found).
 import { Check, X } from "lucide-react";
-import { useRef, useState, type FocusEvent, type KeyboardEvent } from "react";
+import { useEffect, useRef, useState, type FocusEvent, type KeyboardEvent } from "react";
 import type { Task } from "./api";
 import { stage } from "./stages";
 import type { Enqueue } from "./useLocal";
 
-export function TaskItem({ task, enqueue }: { task: Task; enqueue: Enqueue }) {
+export function TaskItem({ task, enqueue, found = false }: { task: Task; enqueue: Enqueue; found?: boolean }) {
   const [editing, setEditing] = useState(false);
   const cancelled = useRef(false);
+  const item = useRef<HTMLLIElement>(null);
+
+  useEffect(() => {
+    if (found) item.current?.scrollIntoView({ block: "center" });
+  }, [found]);
   const path = `/api/tasks/${task.id}`;
   const done = task.status === "done";
 
@@ -32,10 +37,10 @@ export function TaskItem({ task, enqueue }: { task: Task; enqueue: Enqueue }) {
   }
 
   const by = [task.created_by && `added by ${task.created_by}`, task.done_by && `done by ${task.done_by}`].filter(Boolean).join(" · ");
-  const classes = ["task", done && "done", task.pending && "pending"].filter(Boolean).join(" ");
+  const classes = ["task", done && "done", task.pending && "pending", found && "found"].filter(Boolean).join(" ");
 
   return (
-    <li className={classes}>
+    <li ref={item} className={classes}>
       <button
         type="button"
         className="check"

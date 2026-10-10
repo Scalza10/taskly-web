@@ -1,5 +1,5 @@
-// Everything after logging in: the header, the List, Board and Focus screens (the tabs), and on a
-// phone the tab bar. The lists come from the device's copy (works offline); task changes queue up
+// Everything after logging in: the header, the List, Board and Focus screens (the tabs), search
+// (over the screen while open), and on a phone the tab bar. The lists come from the device's copy (works offline); task changes queue up
 // and sync, list and member changes go straight to the server and need a connection.
 import { useEffect, useState, type ReactNode } from "react";
 import { BoardScreen } from "./BoardScreen";
@@ -9,6 +9,7 @@ import { Header, TabBar } from "./Header";
 import { ListScreen } from "./ListScreen";
 import { pickList, savedList, saveList } from "./pickList";
 import { savedScreen, saveScreen, type Screen } from "./screen";
+import { SearchScreen } from "./SearchScreen";
 import { StatusLine } from "./StatusLine";
 import { useLocal } from "./useLocal";
 import { useTimer } from "./useTimer";
@@ -23,12 +24,21 @@ export function ListsPage({ username, notes, onLogout, onSessionLost }: Props) {
   const [selected, setSelected] = useState<string | null>(savedList);
   const [screen, setScreen] = useState<Screen>(savedScreen);
   const [timer, act] = useTimer();
+  const [searching, setSearching] = useState(false);
+  const [found, setFound] = useState<string | null>(null); // a task opened from search, highlighted for a moment
+
+  useEffect(() => {
+    if (!found) return;
+    const done = window.setTimeout(() => setFound(null), 2500);
+    return () => window.clearTimeout(done);
+  }, [found]);
 
   useEffect(() => {
     if (local?.sync.loggedOut) onSessionLost();
   }, [local, onSessionLost]);
 
   function show(next: Screen) {
+    setSearching(false);
     setScreen(next);
     saveScreen(next);
     window.scrollTo(0, 0);
@@ -37,6 +47,12 @@ export function ListsPage({ username, notes, onLogout, onSessionLost }: Props) {
   function choose(id: string) {
     setSelected(id);
     saveList(id);
+  }
+
+  function openFound(listId: string, taskId: string) {
+    choose(listId);
+    show("list");
+    setFound(taskId);
   }
 
   let content: ReactNode = null;
@@ -50,7 +66,9 @@ export function ListsPage({ username, notes, onLogout, onSessionLost }: Props) {
   } else if (local?.stored) {
     const view = applyQueue(local.stored.data, local.queue);
     const current = view.lists.find((list) => list.id === pickList(view.lists, selected));
-    if (screen === "list") {
+    if (searching) {
+      content = <SearchScreen lists={view.lists} onOpen={openFound} onClose={() => setSearching(false)} />;
+    } else if (screen === "list") {
       content = (
         <ListScreen
           lists={view.lists}
@@ -58,6 +76,7 @@ export function ListsPage({ username, notes, onLogout, onSessionLost }: Props) {
           me={view.me}
           local={local}
           enqueue={enqueue}
+          found={found}
           onChoose={choose}
           onSessionLost={onSessionLost}
         />
@@ -77,7 +96,7 @@ export function ListsPage({ username, notes, onLogout, onSessionLost }: Props) {
 
   return (
     <>
-      <Header username={username} screen={screen} onScreen={show} onLogout={onLogout} />
+      <Header username={username} screen={screen} searching={searching} onScreen={show} onSearch={() => setSearching(!searching)} onLogout={onLogout} />
       {notes}
       <main className="content">{content}</main>
       {!wide && <TabBar screen={screen} onScreen={show} />}

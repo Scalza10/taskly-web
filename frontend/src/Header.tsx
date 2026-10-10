@@ -1,10 +1,10 @@
 // The top of every signed-in screen: the wordmark, the screen tabs (on a phone they're the bar at
-// the bottom, see TabBar), who is logged in, the light/dark button and a menu (the burger button)
+// the bottom, see TabBar), search (opens SearchScreen), who is logged in, the light/dark button and a menu (the burger button)
 // with "Sync" (send waiting changes and download the latest now; the result shows in the status
 // line), "Download" (install as an app), "Change password" and "Log out" (the logout itself lives
 // in App, so it survives the switch to the login screen when the session has expired). On a phone
 // the light/dark choice moves into the menu, so the header stays on one line.
-import { Menu, Moon, Sun } from "lucide-react";
+import { Menu, Moon, Search, Sun } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { ChangePassword } from "./ChangePassword";
 import { Avatar, Wordmark } from "./Chrome";
@@ -14,9 +14,16 @@ import { SCREENS, type Screen } from "./screen";
 import { currentTheme, setTheme, systemDark, type Theme } from "./theme";
 import { useWide } from "./useWide";
 
-type Props = { username: string; screen: Screen; onScreen: (screen: Screen) => void; onLogout: () => void };
+type Props = {
+  username: string;
+  screen: Screen;
+  searching: boolean;
+  onScreen: (screen: Screen) => void;
+  onSearch: () => void;
+  onLogout: () => void;
+};
 
-export function Header({ username, screen, onScreen, onLogout }: Props) {
+export function Header({ username, screen, searching, onScreen, onSearch, onLogout }: Props) {
   const wide = useWide();
   const [open, setOpen] = useState(false);
   const [changing, setChanging] = useState(false);
@@ -71,6 +78,16 @@ export function Header({ username, screen, onScreen, onLogout }: Props) {
         <Wordmark />
         {wide && <ScreenTabs screen={screen} onScreen={onScreen} />}
         <div className="who">
+          <button
+            type="button"
+            className={wide ? "round outline" : "round"}
+            aria-label="Search"
+            aria-pressed={searching}
+            title="Search every list"
+            onClick={onSearch}
+          >
+            <Search size={wide ? 18 : 20} aria-hidden="true" />
+          </button>
           <Avatar name={username} />
           {wide && <span className="who-name">{username}</span>}
           {wide && (

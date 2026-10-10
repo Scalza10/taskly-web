@@ -24,11 +24,12 @@ type Props = {
   me: string;
   local: Local;
   enqueue: Enqueue;
+  found: string | null; // a task opened from search
   onChoose: (id: string) => void;
   onSessionLost: () => void;
 };
 
-export function ListScreen({ lists, current, me, local, enqueue, onChoose, onSessionLost }: Props) {
+export function ListScreen({ lists, current, me, local, enqueue, found, onChoose, onSessionLost }: Props) {
   const wide = useWide();
   const [panel, setPanel] = useState<Panel>("none");
   const [error, setError] = useState<string | null>(null);
@@ -94,7 +95,7 @@ export function ListScreen({ lists, current, me, local, enqueue, onChoose, onSes
       {wide && panels}
       <h1 className="headline">{current ? headline(current.tasks) : "No lists yet."}</h1>
       {current ? (
-        <Tasks key={current.id} list={current} enqueue={enqueue} wide={wide} />
+        <Tasks key={current.id} list={current} enqueue={enqueue} wide={wide} found={found} />
       ) : (
         <Empty>Make one with “New list”.</Empty>
       )}
@@ -112,7 +113,7 @@ export function ListScreen({ lists, current, me, local, enqueue, onChoose, onSes
 }
 
 // The add bar, the tasks, then "Clear done". The device picks a new task's id.
-function Tasks({ list, enqueue, wide }: { list: TaskList; enqueue: Enqueue; wide: boolean }) {
+function Tasks({ list, enqueue, wide, found }: { list: TaskList; enqueue: Enqueue; wide: boolean; found: string | null }) {
   const [title, setTitle] = useState("");
   const titleInput = useRef<HTMLInputElement>(null);
 
@@ -145,7 +146,7 @@ function Tasks({ list, enqueue, wide }: { list: TaskList; enqueue: Enqueue; wide
       {list.tasks.length > 0 ? (
         <>
           <ul className="tasks">
-            {list.tasks.map((task) => <TaskItem key={task.id} task={task} enqueue={enqueue} />)}
+            {list.tasks.map((task) => <TaskItem key={task.id} task={task} enqueue={enqueue} found={task.id === found} />)}
           </ul>
           <ClearDone list={list} enqueue={enqueue} />
         </>

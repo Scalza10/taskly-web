@@ -350,6 +350,17 @@ input.title { padding: 0; border: 0; border-bottom: 1px solid var(--primary); ou
 .delete svg { width: 16px; height: 16px; }
 .delete:hover { background: var(--ground); }
 
+/* A task opened from search: it lights up for a moment. */
+.task.found { outline: 2px solid var(--primary); outline-offset: 2px; }
+
+/* ---------- Search ---------- */
+
+.search-bar input::-webkit-search-cancel-button { display: none; } /* the × button closes instead */
+.found-group { display: flex; flex-direction: column; gap: 10px; }
+.found-list { display: flex; align-items: center; gap: 10px; padding: 0 4px; font-size: 16px; font-weight: 600; }
+.task.found-task { display: flex; justify-content: space-between; width: 100%; text-align: left; }
+.task.found-task:hover { background: var(--tint); }
+
 /* "Clear done": under the tasks, and at the foot of the Board's Done column. */
 button.clear-done { align-self: flex-start; }
 
