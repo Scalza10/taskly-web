@@ -4,6 +4,7 @@ import { ChevronDown, Plus } from "lucide-react";
 import { useRef, useState, type FormEvent } from "react";
 import { ApiError, type TaskList } from "./api";
 import { Empty } from "./Chrome";
+import { ClearDone } from "./ClearDone";
 import { sync } from "./device";
 import { ListSettings } from "./ListSettings";
 import { isLoggedOut } from "./messages";
@@ -110,7 +111,7 @@ export function ListScreen({ lists, current, me, local, enqueue, onChoose, onSes
   );
 }
 
-// The add bar, then the tasks. The device picks a new task's id.
+// The add bar, the tasks, then "Clear done". The device picks a new task's id.
 function Tasks({ list, enqueue, wide }: { list: TaskList; enqueue: Enqueue; wide: boolean }) {
   const [title, setTitle] = useState("");
   const titleInput = useRef<HTMLInputElement>(null);
@@ -142,9 +143,12 @@ function Tasks({ list, enqueue, wide }: { list: TaskList; enqueue: Enqueue; wide
         </button>
       </form>
       {list.tasks.length > 0 ? (
-        <ul className="tasks">
-          {list.tasks.map((task) => <TaskItem key={task.id} task={task} enqueue={enqueue} />)}
-        </ul>
+        <>
+          <ul className="tasks">
+            {list.tasks.map((task) => <TaskItem key={task.id} task={task} enqueue={enqueue} />)}
+          </ul>
+          <ClearDone list={list} enqueue={enqueue} />
+        </>
       ) : (
         <Empty>Nothing to do. Add something above.</Empty>
       )}

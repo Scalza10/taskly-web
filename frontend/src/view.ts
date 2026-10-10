@@ -1,7 +1,7 @@
 // What the screen shows: the last snapshot from the server with the unsent changes applied on
 // top, sorted as the server sorts. Pure: easy to test, and the same answer every time.
-import type { Snapshot, Status, Task } from "./api";
-import type { QueuedChange } from "./store";
+import type { Snapshot, Status, Task, TaskList } from "./api";
+import type { QueuedChange, TaskChange } from "./store";
 
 const TASKS = "/api/tasks";
 
@@ -61,6 +61,11 @@ function nextStatus(current: Status, body: { done?: boolean; status?: Status }):
   if (body.done === true) return "done";
   if (body.done === false && current === "done") return "new";
   return undefined;
+}
+
+// "Clear done": a delete for each of the list's finished tasks.
+export function clearDoneChanges(list: TaskList): TaskChange[] {
+  return list.tasks.filter((task) => task.status === "done").map((task) => ({ method: "DELETE", path: `${TASKS}/${task.id}` }));
 }
 
 // As the server sorts: not done first, then oldest first. Ties keep their order (the server's).

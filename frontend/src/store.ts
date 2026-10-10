@@ -10,6 +10,9 @@ export type QueuedChange = {
   queuedAt: string; // device time, ISO; only sorts tasks not yet on the server
 };
 
+// A change as the screens make it; the store adds seq and queuedAt.
+export type TaskChange = Omit<QueuedChange, "seq" | "queuedAt">;
+
 export type StoredSnapshot = { data: Snapshot; syncedAt: string };
 
 export interface Store {

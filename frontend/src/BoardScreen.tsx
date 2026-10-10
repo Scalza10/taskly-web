@@ -1,9 +1,10 @@
 // The Board screen: the current list's tasks in three columns, New, In progress and Done. Each
 // card's button moves its task on: Start, Finish, Reopen; an In progress card also has Back (to
-// New). On a phone the columns stack.
+// New). Done ends with "Clear done". On a phone the columns stack.
 import { ArrowLeft, ArrowRight } from "lucide-react";
 import type { TaskList } from "./api";
 import { Avatar, Empty } from "./Chrome";
+import { ClearDone } from "./ClearDone";
 import { STAGES, stage } from "./stages";
 import type { Enqueue } from "./useLocal";
 import { useWide } from "./useWide";
@@ -56,6 +57,7 @@ export function BoardScreen({ list, enqueue }: { list: TaskList; enqueue: Enqueu
                 </div>
               </article>
             ))}
+            {status === "done" && <ClearDone list={list} enqueue={enqueue} />}
           </section>
         );
       })}

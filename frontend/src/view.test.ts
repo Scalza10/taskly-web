@@ -1,7 +1,7 @@
 import { expect, test } from "vitest";
 import type { Snapshot, Task } from "./api";
 import type { QueuedChange } from "./store";
-import { applyQueue, statusText, syncedLabel } from "./view";
+import { applyQueue, clearDoneChanges, statusText, syncedLabel } from "./view";
 
 function task(id: string, created_at: string, extra: Partial<Task> = {}): Task {
   return { id, list_id: "L", title: id, status: "new", done: false, created_by: "tom", done_by: null, created_at, updated_at: created_at, ...extra };
@@ -78,6 +78,21 @@ test("rename and delete", () => {
     { method: "DELETE", path: "/api/tasks/bread", queuedAt: at },
   ]);
   expect(titles(view)).toEqual(["free-range eggs", "milk"]);
+});
+
+test("clear done deletes only the list's done tasks, and the screen then shows none", () => {
+  const list = applyQueue(snapshot, [{ method: "PATCH", path: "/api/tasks/eggs", body: { status: "done" }, queuedAt: at }]).lists[0];
+  const changes = clearDoneChanges(list);
+  expect(changes).toEqual([
+    { method: "DELETE", path: "/api/tasks/milk" },
+    { method: "DELETE", path: "/api/tasks/eggs" },
+  ]);
+  const queue: QueuedChange[] = [
+    { method: "PATCH", path: "/api/tasks/eggs", body: { status: "done" }, queuedAt: at },
+    ...changes.map((change) => ({ ...change, queuedAt: at })),
+  ];
+  expect(titles(applyQueue(snapshot, queue))).toEqual(["bread"]);
+  expect(clearDoneChanges(applyQueue(snapshot, queue).lists[0])).toEqual([]);
 });
 
 test("a task created and ticked offline shows ticked", () => {

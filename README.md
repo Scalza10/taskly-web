@@ -154,7 +154,7 @@ in Chrome and Edge, and shows these steps elsewhere (it's hidden in the installe
 - **Android (Chrome):** menu → **Install app** (or "Add to Home screen").
 - **Laptop (Chrome or Edge):** the install icon at the end of the address bar.
 
-**Offline** you can see your lists and add, tick, rename and delete tasks. The
+**Offline** you can see your lists and add, tick, rename and delete tasks, and clear a list's done ones. The
 line at the bottom says how many changes are waiting; they're sent when you're
 back online and the app is open (it doesn't sync in the background). It syncs
 when opened, every 30 seconds while open, and when you press **Sync** in the menu. Creating
@@ -273,6 +273,7 @@ frontend/
     ListsPage.tsx   everything after logging in: the header and the List, Board and Focus screens
     ListScreen.tsx, TaskItem.tsx, NewList.tsx, ListSettings.tsx   the List screen: the picker, the add bar, the tasks, new list, members and rename/delete
     BoardScreen.tsx   the Board: New, In progress and Done columns
+    ClearDone.tsx   "Clear done" (List and Board): deletes a list's finished tasks after an inline confirmation
     FocusScreen.tsx, timer.ts, useTimer.ts   the Focus screen's pomodoro timer (kept on the device only)
     stages.ts     a task's stage (status): labels, the Board's buttons, the List's headline
     Chrome.tsx, style.css, useWide.ts   shared pieces (wordmark, avatar, blobs), the "Organic" look (Archivo, bundled locally), desktop vs phone at 900px

@@ -350,6 +350,9 @@ input.title { padding: 0; border: 0; border-bottom: 1px solid var(--primary); ou
 .delete svg { width: 16px; height: 16px; }
 .delete:hover { background: var(--ground); }
 
+/* "Clear done": under the tasks, and at the foot of the Board's Done column. */
+button.clear-done { align-self: flex-start; }
+
 .list-footer { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; }
 .list-footer .links { display: flex; gap: 4px; margin-right: auto; }
 .list-footer .notes { flex-basis: 100%; }
