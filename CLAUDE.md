@@ -74,3 +74,5 @@ The VM runs one Caddy (`~/proxy`, owns 80/443) and several apps, each its own Co
 ## Process
 
 Small commits prefixed `feat:`, `fix:` or `docs:`. Default branch `main`.
+
+Planned features are tasks in Taskly's own **Enhancements** list (through the claude.ai Taskly connector); the `tracking-enhancements` skill (`.claude/skills/`) says how to read and update it as work starts and ships.
