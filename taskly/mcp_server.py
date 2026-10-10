@@ -31,6 +31,7 @@ INSTRUCTIONS = """Taskly holds the user's to-do lists, some shared with other pe
 Call list_lists first to see the lists. Task ids come from list_tasks.
 To close (finish, tick off) a task, call complete_task; done=false opens it again.
 A task's status is new, progress (in progress, being worked on) or done; set_task_status moves it.
+update_task renames a task. delete_task removes one for everyone on its list, for good.
 Lists can be named by id or by name."""
 
 _user: contextvars.ContextVar[dict] = contextvars.ContextVar("taskly_mcp_user")
@@ -171,6 +172,31 @@ def build(settings: Settings) -> MCPServer:
         with connection() as conn:
             task = _my_task(conn, user["id"], task_id)
             return _task(tasks.update_task(conn, task["id"], user["id"], status=status))
+
+    @server.tool(annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=False, idempotentHint=True,
+                                             openWorldHint=False))
+    def update_task(
+        task_id: Annotated[str, Field(description="The task's id, from list_tasks.")],
+        title: Annotated[Title, Field(description="The task's new title.")],
+    ) -> dict:
+        """Rename a task. Its status stays as it is."""
+        user = _user.get()
+        with connection() as conn:
+            task = _my_task(conn, user["id"], task_id)
+            updated = tasks.update_task(conn, task["id"], user["id"], title=title)
+            if updated is None:  # deleted since _my_task
+                raise ToolError("No such task. Task ids come from list_tasks.")
+            return _task(updated)
+
+    @server.tool(annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=True, idempotentHint=False,
+                                             openWorldHint=False))
+    def delete_task(task_id: Annotated[str, Field(description="The task's id, from list_tasks.")]) -> dict:
+        """Delete a task for everyone on its list. There is no undo; to finish a task, use complete_task."""
+        user = _user.get()
+        with connection() as conn:
+            task = _my_task(conn, user["id"], task_id)
+            tasks.delete_task(conn, task["id"])
+            return {"deleted": _task(task)}
 
     return server
 

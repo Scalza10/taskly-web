@@ -190,8 +190,10 @@ and the page shows the changes on its next sync.
 | `add_tasks` | Adds one or more tasks (up to 50) to a list, by name or id |
 | `complete_task` | Closes a task; `done: false` opens it again |
 | `set_task_status` | Moves a task to `new`, `progress` (in progress) or `done`, like the page's board |
+| `update_task` | Renames a task |
+| `delete_task` | Deletes a task for everyone on its list (no undo; Claude asks first) |
 
-It can't delete tasks or lists, rename them, or change members; use the page for that.
+It can't delete or rename lists, or change members; use the page for that.
 
 **Connecting Claude (web, desktop and phone apps).** Your plan must allow custom connectors
 (Pro and Max do). Add it on the web or in the desktop app; the phone app then has it too.

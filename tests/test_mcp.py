@@ -34,10 +34,13 @@ def test_initialize_and_the_tools(client, token):
                                                "clientInfo": {"name": "test", "version": "1"}})
     assert result["serverInfo"]["name"] == "Taskly" and "complete_task" in result["instructions"]
     tools = {tool["name"]: tool for tool in rpc(client, token, "tools/list")["tools"]}
-    assert set(tools) == {"list_lists", "list_tasks", "create_list", "add_tasks", "complete_task", "set_task_status"}
+    assert set(tools) == {"list_lists", "list_tasks", "create_list", "add_tasks", "complete_task", "set_task_status",
+                          "update_task", "delete_task"}
     assert tools["set_task_status"]["inputSchema"]["properties"]["status"]["enum"] == ["new", "progress", "done"]
     assert tools["list_tasks"]["annotations"]["readOnlyHint"] is True
     assert tools["add_tasks"]["annotations"]["destructiveHint"] is False
+    assert tools["update_task"]["annotations"]["destructiveHint"] is False
+    assert tools["delete_task"]["annotations"]["destructiveHint"] is True
 
 
 def test_no_token_points_at_the_sign_in(anon):
@@ -138,6 +141,27 @@ def test_set_a_tasks_status(client, token):
     assert "No such task" in call(client, token, "set_task_status", task_id="not-an-id", status="done")
 
 
+def test_rename_a_task(client, token):
+    groceries = new_list(client)
+    milk = new_task(client, groceries["id"], "Milk")
+    renamed = call(client, token, "update_task", task_id=milk["id"], title="  Oat milk ")
+    assert (renamed["id"], renamed["title"], renamed["status"]) == (milk["id"], "Oat milk", "new")
+    assert client.get("/api/sync").json()["lists"][0]["tasks"][0]["title"] == "Oat milk"
+    assert "title" in call(client, token, "update_task", task_id=milk["id"], title="  ")
+    assert "title" in call(client, token, "update_task", task_id=milk["id"], title="x" * 501)
+    assert "No such task" in call(client, token, "update_task", task_id="not-an-id", title="Eggs")
+
+
+def test_delete_a_task(client, token):
+    groceries = new_list(client)
+    milk = new_task(client, groceries["id"], "Milk")
+    bread = new_task(client, groceries["id"], "Bread")
+    deleted = call(client, token, "delete_task", task_id=milk["id"])
+    assert deleted["deleted"]["id"] == milk["id"] and deleted["deleted"]["title"] == "Milk"
+    assert [t["id"] for t in client.get("/api/sync").json()["lists"][0]["tasks"]] == [bread["id"]]
+    assert "No such task" in call(client, token, "delete_task", task_id=milk["id"])
+
+
 def test_errors_are_tool_errors(client, token):
     assert "create_list makes one" in call(client, token, "list_tasks", list="Groceries")
     new_list(client, "Groceries")
@@ -176,6 +200,10 @@ def test_the_agent_has_the_users_rights(app, settings, client, token):
     assert call(client, token, "complete_task", task_id=chore["id"])["done_by"] == "maria"
     assert "No such task" in call(client, token, "set_task_status", task_id=secret["id"], status="progress")
     assert call(client, token, "set_task_status", task_id=chore["id"], status="progress")["status"] == "progress"
+    assert "No such task" in call(client, token, "update_task", task_id=secret["id"], title="Mine now")
+    assert call(client, token, "update_task", task_id=chore["id"], title="Chores")["title"] == "Chores"
+    assert "No such task" in call(client, token, "delete_task", task_id=secret["id"])
+    assert call(client, token, "delete_task", task_id=chore["id"])["deleted"]["id"] == chore["id"]
     assert call(client, token, "add_tasks", list="shared", titles=["More"])["added"][0]["created_by"] == "maria"
 
 

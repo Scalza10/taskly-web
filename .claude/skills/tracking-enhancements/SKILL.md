@@ -16,7 +16,7 @@ not at the end.
 
 The tools are deferred. Load them in one call:
 
-`ToolSearch` → `select:mcp__claude_ai_Taskly__list_lists,mcp__claude_ai_Taskly__list_tasks,mcp__claude_ai_Taskly__add_tasks,mcp__claude_ai_Taskly__set_task_status,mcp__claude_ai_Taskly__complete_task`
+`ToolSearch` → `select:mcp__claude_ai_Taskly__list_lists,mcp__claude_ai_Taskly__list_tasks,mcp__claude_ai_Taskly__add_tasks,mcp__claude_ai_Taskly__set_task_status,mcp__claude_ai_Taskly__complete_task,mcp__claude_ai_Taskly__update_task,mcp__claude_ai_Taskly__delete_task`
 
 If a call answers "needs you to sign in again", ask the user to run `/mcp` and pick claude.ai
 Taskly; don't retry until they have.
@@ -45,7 +45,9 @@ Taskly; don't retry until they have.
 | Work stopped or was started too soon | `set_task_status(task_id, "new")` |
 | New idea | `add_tasks(list=<the id>, titles=["[Tag] Name: details"])` |
 | A feature shipped that isn't on the list | Offer to add it and mark it done; don't add it unasked |
-| Rename, merge, delete an item | No tool for that yet: tell the user to do it on the page (List screen: click the title to rename; the bin to delete) |
+| Rename an item | `update_task(task_id, title)` |
+| Delete an item | Ask the user first, then `delete_task(task_id)` (no undo) |
+| Merge two items | `update_task` the one that stays, then (after asking) `delete_task` the other |
 
 Task ids come from `list_tasks`; match the user's words to a title, and ask if two could match.
 
@@ -56,5 +58,5 @@ Task ids come from `list_tasks`; match the user's words to a title, and ask if t
 - Adding a duplicate: read the list first and check for a matching title.
 - Shipping part of an item: leave it in progress and say what's left, or ask the user whether to
   split it into a new task for the rest.
-- When `[Small] Notes on a task` or `[Small] More MCP tools` ships, update this skill: details
-  move to notes, and renames and deletes become tool calls.
+- When `[Small] Notes on a task` ships, update this skill: details move to notes (and
+  `update_task` may then take them).
