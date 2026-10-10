@@ -1,6 +1,6 @@
 import { expect, test } from "vitest";
 import type { Status, Task } from "./api";
-import { headline, moveChange, stage, workingOn } from "./stages";
+import { focusTask, headline, moveChange, stage, workingOn } from "./stages";
 
 const task = (title: string, status: Status) => ({ id: title, title, status }) as Task;
 
@@ -29,4 +29,13 @@ test("dropping a card on another column moves it there; on its own column, nothi
   expect(moveChange(task("a", "new"), "done")).toEqual({ method: "PATCH", path: "/api/tasks/a", body: { status: "done" } });
   expect(moveChange(task("a", "done"), "progress")).toEqual({ method: "PATCH", path: "/api/tasks/a", body: { status: "progress" } });
   expect(moveChange(task("a", "progress"), "progress")).toBeUndefined();
+});
+
+test("the Focus screen's task: the one picked if it's open in this list, else the one working on", () => {
+  const tasks = [task("a", "new"), task("b", "progress"), task("c", "done")];
+  expect(focusTask(tasks, "a")?.title).toBe("a");
+  expect(focusTask(tasks, null)?.title).toBe("b");
+  expect(focusTask(tasks, "c")?.title).toBe("b"); // done
+  expect(focusTask(tasks, "other-list")?.title).toBe("b");
+  expect(focusTask([task("c", "done")], "c")).toBeUndefined();
 });

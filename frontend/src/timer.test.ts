@@ -1,12 +1,12 @@
 import { expect, test } from "vitest";
-import { DURATION, finishDue, initialTimer, parseTimer, remainingAt, reset, runLabel, setMode, toggle, type Timer } from "./timer";
+import { DURATION, finishDue, initialTimer, keepCounts, parseTimer, pick, remainingAt, reset, runLabel, setMode, toggle, type Timer } from "./timer";
 
 const t0 = 1_000_000;
 const s = (seconds: number) => t0 + seconds * 1000;
 
 test("a new timer is a full focus session, stopped", () => {
   const timer = initialTimer();
-  expect(timer).toMatchObject({ mode: "focus", running: false, sessions: 0 });
+  expect(timer).toMatchObject({ mode: "focus", running: false, sessions: 0, taskId: null, counts: {} });
   expect(remainingAt(timer, t0)).toBe(25 * 60);
   expect(runLabel(timer, t0)).toBe("Start");
 });
@@ -73,4 +73,39 @@ test("a stored timer is read back only if it makes sense", () => {
   expect(parseTimer("{")).toBeUndefined();
   expect(parseTimer(JSON.stringify({ ...timer, mode: "nap" }))).toBeUndefined();
   expect(parseTimer(JSON.stringify({ ...timer, sessions: 9 }))).toBeUndefined();
+});
+
+test("a finished focus session counts for the task picked; a break or no task counts for none", () => {
+  const running = toggle(pick(initialTimer(), "a"), t0);
+  const once = finishDue(running, s(1500));
+  expect(once).toMatchObject({ taskId: "a", counts: { a: 1 } });
+  const twice = finishDue(toggle(once, s(2000)), s(3500));
+  expect(twice.counts).toEqual({ a: 2 });
+  expect(finishDue(toggle(pick(twice, "b"), s(4000)), s(5500)).counts).toEqual({ a: 2, b: 1 });
+
+  const short = toggle(setMode(twice, "short"), s(4000));
+  expect(finishDue(short, s(4000 + DURATION.short)).counts).toEqual({ a: 2 });
+  expect(finishDue(toggle(initialTimer(), t0), s(1500)).counts).toEqual({});
+});
+
+test("picking a task doesn't stop or change the timer", () => {
+  const running = toggle(initialTimer(), t0);
+  expect(pick(running, "a")).toEqual({ ...running, taskId: "a" });
+});
+
+test("counts of tasks that are gone are dropped; nothing to drop keeps the same timer", () => {
+  const timer: Timer = { ...initialTimer(), taskId: "gone", counts: { a: 2, gone: 1 } };
+  expect(keepCounts(timer, new Set(["a", "b"]))).toEqual({ ...timer, taskId: null, counts: { a: 2 } });
+  const kept = { ...timer, taskId: "a", counts: { a: 2 } };
+  expect(keepCounts(kept, new Set(["a"]))).toBe(kept);
+});
+
+test("a timer stored by the page before tasks had counts still loads", () => {
+  const old = { mode: "focus", running: false, remaining: 600, endsAt: null, sessions: 2 };
+  expect(parseTimer(JSON.stringify(old))).toEqual({ ...old, taskId: null, counts: {} });
+  const timer = { ...old, taskId: "a", counts: { a: 3 } };
+  expect(parseTimer(JSON.stringify(timer))).toEqual(timer);
+  expect(parseTimer(JSON.stringify({ ...timer, taskId: 7 }))).toBeUndefined();
+  expect(parseTimer(JSON.stringify({ ...timer, counts: { a: -1 } }))).toBeUndefined();
+  expect(parseTimer(JSON.stringify({ ...timer, counts: [] }))).toBeUndefined();
 });

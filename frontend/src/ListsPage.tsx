@@ -12,6 +12,7 @@ import { savedScreen, saveScreen, type Screen } from "./screen";
 import { SearchScreen } from "./SearchScreen";
 import { StatusLine } from "./StatusLine";
 import { useLocal } from "./useLocal";
+import { keepCounts, pick } from "./timer";
 import { useTimer } from "./useTimer";
 import { useWide } from "./useWide";
 import { applyQueue } from "./view";
@@ -37,6 +38,13 @@ export function ListsPage({ username, notes, onLogout, onSessionLost }: Props) {
     if (local?.sync.loggedOut) onSessionLost();
   }, [local, onSessionLost]);
 
+  // The timer forgets the tasks that are gone, each time the device's copy changes.
+  useEffect(() => {
+    if (!local?.stored) return;
+    const ids = new Set(applyQueue(local.stored.data, local.queue).lists.flatMap((list) => list.tasks.map((task) => task.id)));
+    act((t) => keepCounts(t, ids));
+  }, [local, act]);
+
   function show(next: Screen) {
     setSearching(false);
     setScreen(next);
@@ -47,6 +55,11 @@ export function ListsPage({ username, notes, onLogout, onSessionLost }: Props) {
   function choose(id: string) {
     setSelected(id);
     saveList(id);
+  }
+
+  function focusOn(taskId: string) {
+    act((t) => pick(t, taskId));
+    show("focus");
   }
 
   function openFound(listId: string, taskId: string) {
@@ -78,6 +91,7 @@ export function ListsPage({ username, notes, onLogout, onSessionLost }: Props) {
           enqueue={enqueue}
           found={found}
           onChoose={choose}
+          onFocus={focusOn}
           onSessionLost={onSessionLost}
         />
       );
@@ -88,7 +102,7 @@ export function ListsPage({ username, notes, onLogout, onSessionLost }: Props) {
         </div>
       );
     } else if (screen === "board") {
-      content = <BoardScreen key={current.id} list={current} enqueue={enqueue} />;
+      content = <BoardScreen key={current.id} list={current} enqueue={enqueue} onFocus={focusOn} />;
     } else {
       content = <FocusScreen tasks={current.tasks} timer={timer} act={act} />;
     }

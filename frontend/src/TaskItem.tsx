@@ -1,13 +1,15 @@
 // One task on the List screen: the round box ticks it (unticking sends it back to New), click the
 // title to rename (Enter or leaving the field saves, Escape cancels), the chip shows its stage,
-// × deletes. A task opened from search scrolls into view and lights up for a moment (found).
-import { Check, X } from "lucide-react";
+// the timer button (open tasks) focuses on it on the Focus screen, × deletes. A task opened from search scrolls into view and lights up for a moment (found).
+import { Check, Timer, X } from "lucide-react";
 import { useEffect, useRef, useState, type FocusEvent, type KeyboardEvent } from "react";
 import type { Task } from "./api";
 import { stage } from "./stages";
 import type { Enqueue } from "./useLocal";
 
-export function TaskItem({ task, enqueue, found = false }: { task: Task; enqueue: Enqueue; found?: boolean }) {
+type Props = { task: Task; enqueue: Enqueue; onFocus: (taskId: string) => void; found?: boolean };
+
+export function TaskItem({ task, enqueue, onFocus, found = false }: Props) {
   const [editing, setEditing] = useState(false);
   const cancelled = useRef(false);
   const item = useRef<HTMLLIElement>(null);
@@ -58,6 +60,11 @@ export function TaskItem({ task, enqueue, found = false }: { task: Task; enqueue
       )}
       {by && <small className="by">{by}</small>}
       <span className={`chip chip-${task.status}`}>{stage(task.status).label}</span>
+      {!done && (
+        <button type="button" className="focus-on" aria-label={`focus on "${task.title}"`} title="Focus on this" onClick={() => onFocus(task.id)}>
+          <Timer size={18} aria-hidden="true" />
+        </button>
+      )}
       <button type="button" className="delete" aria-label={`delete "${task.title}"`} onClick={() => void enqueue({ method: "DELETE", path })}>
         <X size={18} aria-hidden="true" />
       </button>

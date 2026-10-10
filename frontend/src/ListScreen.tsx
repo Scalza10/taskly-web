@@ -26,10 +26,11 @@ type Props = {
   enqueue: Enqueue;
   found: string | null; // a task opened from search
   onChoose: (id: string) => void;
+  onFocus: (taskId: string) => void;
   onSessionLost: () => void;
 };
 
-export function ListScreen({ lists, current, me, local, enqueue, found, onChoose, onSessionLost }: Props) {
+export function ListScreen({ lists, current, me, local, enqueue, found, onChoose, onFocus, onSessionLost }: Props) {
   const wide = useWide();
   const [panel, setPanel] = useState<Panel>("none");
   const [error, setError] = useState<string | null>(null);
@@ -95,7 +96,7 @@ export function ListScreen({ lists, current, me, local, enqueue, found, onChoose
       {wide && panels}
       <h1 className="headline">{current ? headline(current.tasks) : "No lists yet."}</h1>
       {current ? (
-        <Tasks key={current.id} list={current} enqueue={enqueue} wide={wide} found={found} />
+        <Tasks key={current.id} list={current} enqueue={enqueue} wide={wide} found={found} onFocus={onFocus} />
       ) : (
         <Empty>Make one with “New list”.</Empty>
       )}
@@ -113,7 +114,9 @@ export function ListScreen({ lists, current, me, local, enqueue, found, onChoose
 }
 
 // The add bar, the tasks, then "Clear done". The device picks a new task's id.
-function Tasks({ list, enqueue, wide, found }: { list: TaskList; enqueue: Enqueue; wide: boolean; found: string | null }) {
+type TasksProps = { list: TaskList; enqueue: Enqueue; wide: boolean; found: string | null; onFocus: (taskId: string) => void };
+
+function Tasks({ list, enqueue, wide, found, onFocus }: TasksProps) {
   const [title, setTitle] = useState("");
   const titleInput = useRef<HTMLInputElement>(null);
 
@@ -146,7 +149,7 @@ function Tasks({ list, enqueue, wide, found }: { list: TaskList; enqueue: Enqueu
       {list.tasks.length > 0 ? (
         <>
           <ul className="tasks">
-            {list.tasks.map((task) => <TaskItem key={task.id} task={task} enqueue={enqueue} found={task.id === found} />)}
+            {list.tasks.map((task) => <TaskItem key={task.id} task={task} enqueue={enqueue} onFocus={onFocus} found={task.id === found} />)}
           </ul>
           <ClearDone list={list} enqueue={enqueue} />
         </>

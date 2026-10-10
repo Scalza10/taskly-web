@@ -34,3 +34,8 @@ export function headline(tasks: Task[]): string {
 export function workingOn(tasks: Task[]): Task | undefined {
   return tasks.find((task) => task.status === "progress") ?? tasks.find((task) => task.status === "new");
 }
+
+// The Focus screen's task: the one picked, if it's open in these tasks; else the one working on.
+export function focusTask(tasks: Task[], picked: string | null): Task | undefined {
+  return tasks.find((task) => task.id === picked && task.status !== "done") ?? workingOn(tasks);
+}

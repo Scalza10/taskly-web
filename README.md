@@ -277,7 +277,7 @@ frontend/
     BoardScreen.tsx   the Board: New, In progress and Done columns; buttons move a card, and on a desktop so does dragging it
     ClearDone.tsx   "Clear done" (List and Board): deletes a list's finished tasks after an inline confirmation
     SearchScreen.tsx, search.ts   search every list (the header's magnifier), on the device's copy
-    FocusScreen.tsx, timer.ts, useTimer.ts   the Focus screen's pomodoro timer (kept on the device only)
+    FocusScreen.tsx, timer.ts, useTimer.ts   the Focus screen's pomodoro timer, the task focused on and the sessions per task (kept on the device only)
     stages.ts     a task's stage (status): labels, the Board's buttons and drops, the List's headline
     Chrome.tsx, style.css, useWide.ts   shared pieces (wordmark, avatar, blobs), the "Organic" look (Archivo, bundled locally), desktop vs phone at 900px
     pickList.ts, screen.ts   which list and which screen are open

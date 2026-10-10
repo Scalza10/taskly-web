@@ -1,8 +1,9 @@
 // The Board screen: the current list's tasks in three columns, New, In progress and Done. Each
 // card's button moves its task on: Start, Finish, Reopen; an In progress card also has Back (to
 // New). On a desktop a card can also be dragged to another column; on a phone (where the columns
-// stack and dragging fights scrolling) the buttons are the way. Done ends with "Clear done".
-import { ArrowLeft, ArrowRight } from "lucide-react";
+// stack and dragging fights scrolling) the buttons are the way. An open card's timer button focuses
+// on it on the Focus screen. Done ends with "Clear done".
+import { ArrowLeft, ArrowRight, Timer } from "lucide-react";
 import { useState, type DragEvent } from "react";
 import type { Status, Task, TaskList } from "./api";
 import { Avatar, Empty } from "./Chrome";
@@ -11,7 +12,9 @@ import { STAGES, moveChange, stage } from "./stages";
 import type { Enqueue } from "./useLocal";
 import { useWide } from "./useWide";
 
-export function BoardScreen({ list, enqueue }: { list: TaskList; enqueue: Enqueue }) {
+type Props = { list: TaskList; enqueue: Enqueue; onFocus: (taskId: string) => void };
+
+export function BoardScreen({ list, enqueue, onFocus }: Props) {
   const wide = useWide();
   const [dragging, setDragging] = useState<Task | null>(null);
   const [over, setOver] = useState<Status | null>(null);
@@ -78,6 +81,11 @@ export function BoardScreen({ list, enqueue }: { list: TaskList; enqueue: Enqueu
                     <span className="by">
                       {wide ? <><Avatar name={task.created_by} size="sm" />{task.created_by}</> : `added by ${task.created_by}`}
                     </span>
+                  )}
+                  {status !== "done" && (
+                    <button type="button" className="action icon-action" aria-label={`Focus on: ${task.title}`} title="Focus on this" onClick={() => onFocus(task.id)}>
+                      <Timer size={14} strokeWidth={2.5} aria-hidden="true" />
+                    </button>
                   )}
                   {back && (
                     <button

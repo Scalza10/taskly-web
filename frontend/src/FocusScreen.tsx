@@ -1,11 +1,13 @@
 // The Focus screen: a pomodoro timer (focus, short break, long break) next to the task being
-// worked on, the current list's first task in progress (else its first new one). The timer
-// itself lives in ListsPage (useTimer), so it keeps running on the other screens.
-import { RotateCcw } from "lucide-react";
+// worked on: the one picked (here, or with a task's Focus button), else the current list's first
+// task in progress (else its first new one). Play focuses on the task shown; a finished focus
+// session counts for it ("3 sessions on this task", kept on this device only). The timer itself
+// lives in ListsPage (useTimer), so it keeps running on the other screens.
+import { ChevronDown, RotateCcw } from "lucide-react";
 import type { Task } from "./api";
 import { PauseIcon, PlayIcon } from "./Chrome";
-import { workingOn } from "./stages";
-import { clock, DURATION, remainingAt, reset, runLabel, SESSIONS, setMode, toggle, type Mode, type Timer } from "./timer";
+import { focusTask } from "./stages";
+import { clock, DURATION, pick, remainingAt, reset, runLabel, SESSIONS, setMode, toggle, type Mode, type Timer } from "./timer";
 import { useNow, type TimerAction } from "./useTimer";
 import { useWide } from "./useWide";
 
@@ -24,7 +26,8 @@ export function FocusScreen({ tasks, timer, act }: { tasks: Task[]; timer: Timer
   const left = remainingAt(timer, now);
   const total = DURATION[timer.mode];
   const label = runLabel(timer, now);
-  const current = workingOn(tasks)?.title ?? "Nothing in progress";
+  const shown = focusTask(tasks, timer.taskId);
+  const count = shown ? timer.counts[shown.id] ?? 0 : 0;
   const caption = MODES.find((m) => m.mode === timer.mode)!.caption;
 
   const pebbles = (
@@ -32,6 +35,18 @@ export function FocusScreen({ tasks, timer, act }: { tasks: Task[]; timer: Timer
       {PEBBLES.map((shape, i) => <span key={shape} className={`pebble ${shape}${i < timer.sessions ? " filled" : ""}`} />)}
     </div>
   );
+
+  const current = shown ? (
+    <label className="select focus-pick">
+      <select aria-label="Working on" value={shown.id} onChange={(e) => act((t) => pick(t, e.target.value))}>
+        {tasks.filter((task) => task.status !== "done").map((task) => <option key={task.id} value={task.id}>{task.title}</option>)}
+      </select>
+      <ChevronDown size={wide ? 18 : 16} strokeWidth={2.5} aria-hidden="true" />
+    </label>
+  ) : (
+    <span className="working-on">Nothing in progress</span>
+  );
+  const sessionsOnIt = count > 0 && <span className="sessions-text">{count === 1 ? "1 session" : `${count} sessions`} on this task</span>;
 
   return (
     <div className="screen focus-screen">
@@ -70,7 +85,7 @@ export function FocusScreen({ tasks, timer, act }: { tasks: Task[]; timer: Timer
           <button type="button" className="round outline reset" aria-label="Reset" onClick={() => act(reset)}>
             <RotateCcw size={20} aria-hidden="true" />
           </button>
-          <button type="button" className="play pebble-play" aria-label={label} onClick={() => act(toggle)}>
+          <button type="button" className="play pebble-play" aria-label={label} onClick={() => act((t, at) => toggle(t.running ? t : pick(t, shown?.id ?? null), at))}>
             {timer.running ? <PauseIcon size={wide ? 26 : 24} /> : <PlayIcon size={wide ? 26 : 24} />}
           </button>
           <span className="run-label" aria-hidden="true">{label}</span>
@@ -81,7 +96,8 @@ export function FocusScreen({ tasks, timer, act }: { tasks: Task[]; timer: Timer
         <aside className="focus-side">
           <div className="side-card">
             <span className="side-label">Working on</span>
-            <span className="working-on">{current}</span>
+            {current}
+            {sessionsOnIt}
           </div>
           <div className="side-card">
             <span className="side-label">Sessions</span>
@@ -93,7 +109,8 @@ export function FocusScreen({ tasks, timer, act }: { tasks: Task[]; timer: Timer
         <div className="side-card focus-card">
           <div className="focus-card-text">
             <span className="side-label">Working on</span>
-            <span className="working-on">{current}</span>
+            {current}
+            {sessionsOnIt}
           </div>
           {pebbles}
         </div>
