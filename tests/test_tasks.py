@@ -65,6 +65,19 @@ def test_a_due_date_is_set_kept_and_removed(conn, maria, groceries):
     assert (cleared["due_date"], cleared["title"], cleared["status"]) == (None, "Oat milk", "progress")
 
 
+def test_a_due_time_goes_with_its_date(conn, maria, groceries):
+    task, _ = tasks.create_task(conn, new_id(), groceries, "Dentist", maria["id"], "2026-10-18", "15:00", "America/New_York")
+    assert (task["due_date"], task["due_time"], task["due_zone"]) == ("2026-10-18", "15:00", "America/New_York")
+    assert tasks.update_task(conn, task["id"], maria["id"], status="progress")["due_time"] == "15:00"
+    # A new date without a time is a date without a time.
+    moved = tasks.update_task(conn, task["id"], maria["id"], due_date="2026-10-19")
+    assert (moved["due_date"], moved["due_time"], moved["due_zone"]) == ("2026-10-19", None, None)
+    timed = tasks.update_task(conn, task["id"], maria["id"], due_date="2026-10-20", due_time="09:30", due_zone="Atlantic/Canary")
+    assert (timed["due_time"], timed["due_zone"]) == ("09:30", "Atlantic/Canary")
+    cleared = tasks.update_task(conn, task["id"], maria["id"], due_date=None)
+    assert (cleared["due_date"], cleared["due_time"], cleared["due_zone"]) == (None, None, None)
+
+
 def test_delete(conn, maria, groceries):
     task, _ = tasks.create_task(conn, new_id(), groceries, "Milk", maria["id"])
     assert tasks.delete_task(conn, task["id"]) is True

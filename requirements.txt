@@ -3,3 +3,5 @@ uvicorn[standard]==0.53.0
 pydantic-settings==2.15.0
 mcp==2.3.0
 python-multipart==0.0.32
+# Time zone names for zoneinfo (due_zone): Windows has none of its own.
+tzdata==2026.5

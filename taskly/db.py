@@ -140,6 +140,14 @@ MIGRATIONS = [
     """
     ALTER TABLE tasks ADD COLUMN due_date TEXT CHECK (due_date IS NULL OR date(due_date) IS due_date);
     """,
+    # 7: an optional time with the due date (an appointment): the clock time ('15:00') in due_zone, the
+    # time zone of whoever set it ('America/New_York'), so it is one moment for everyone and each page
+    # shows it in its own time. A time needs a date; a time and its zone come together.
+    """
+    ALTER TABLE tasks ADD COLUMN due_time TEXT CHECK (due_time IS NULL OR (due_date IS NOT NULL
+        AND (due_time GLOB '[01][0-9]:[0-5][0-9]' OR due_time GLOB '2[0-3]:[0-5][0-9]')));
+    ALTER TABLE tasks ADD COLUMN due_zone TEXT CHECK ((due_zone IS NULL) = (due_time IS NULL));
+    """,
 ]
 
 

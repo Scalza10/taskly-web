@@ -118,6 +118,47 @@ def test_a_due_date_is_only_a_calendar_day(client):
     assert client.get("/api/sync").json()["lists"][0]["tasks"][0]["due_date"] is None
 
 
+def test_due_times(client):
+    made = new_list(client)
+    body = {"id": str(uuid.uuid4()), "list_id": made["id"], "title": "Dentist",
+            "due_date": "2026-10-18", "due_time": "15:00", "due_zone": "America/New_York"}
+    task = client.post("/api/tasks", json=body).json()
+    assert (task["due_date"], task["due_time"], task["due_zone"]) == ("2026-10-18", "15:00", "America/New_York")
+    path = f"/api/tasks/{task['id']}"
+    assert client.patch(path, json={"title": "Dentist (Dr Lee)"}).json()["due_time"] == "15:00"  # left alone
+    moved = client.patch(path, json={"due_date": "2026-10-19", "due_time": "09:30", "due_zone": "Atlantic/Canary"}).json()
+    assert (moved["due_date"], moved["due_time"], moved["due_zone"]) == ("2026-10-19", "09:30", "Atlantic/Canary")
+    untimed = client.patch(path, json={"due_date": "2026-10-19"}).json()
+    assert (untimed["due_date"], untimed["due_time"], untimed["due_zone"]) == ("2026-10-19", None, None)
+    assert new_task(client, made["id"], "Eggs")["due_time"] is None
+
+
+def test_a_due_time_needs_its_date_and_zone(client):
+    made = new_list(client)
+    task = new_task(client, made["id"])
+    path = f"/api/tasks/{task['id']}"
+    day, zone = "2026-10-18", "America/New_York"
+    for wrong in [
+        {"due_date": day, "due_time": "15:00"},  # no zone
+        {"due_date": day, "due_zone": zone},  # a zone, no time
+        {"due_time": "15:00", "due_zone": zone},  # no date in the body
+        {"due_time": None},
+        {"due_date": None, "due_time": "15:00", "due_zone": zone},
+        {"due_date": day, "due_time": "24:00", "due_zone": zone},
+        {"due_date": day, "due_time": "3pm", "due_zone": zone},
+        {"due_date": day, "due_time": "15:00:00", "due_zone": zone},
+        {"due_date": day, "due_time": "15:00", "due_zone": "Mars/Olympus"},
+        {"due_date": day, "due_time": "15:00", "due_zone": "America"},
+        {"due_date": day, "due_time": "15:00", "due_zone": "../etc/passwd"},
+        {"due_date": day, "due_time": "15:00", "due_zone": "EST" * 30},
+    ]:
+        assert client.patch(path, json=wrong).status_code == 422, wrong
+        created = client.post("/api/tasks", json={"id": str(uuid.uuid4()), "list_id": made["id"], "title": "x", **wrong})
+        assert created.status_code == 422, wrong
+    [stored] = client.get("/api/sync").json()["lists"][0]["tasks"]
+    assert (stored["due_date"], stored["due_time"], stored["due_zone"]) == (None, None, None)
+
+
 def test_a_retried_create_changes_nothing(client):
     made = new_list(client)
     task = new_task(client, made["id"], "Milk")
