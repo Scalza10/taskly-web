@@ -1,10 +1,13 @@
 """Queries on tasks. IDs are UUIDs made by the device, so creating is safe to retry.
 Every function takes an open connection and returns plain dicts (status as 'new', 'progress' or
-'done', plus done as a bool for older pages and agents; people by name)."""
+'done', plus done as a bool for older pages and agents; people by name; due_date as '2026-10-17' or None)."""
 
 import sqlite3
 
-SELECT = """SELECT t.id, t.list_id, t.title, t.status, c.username AS created_by, d.username AS done_by,
+# update_task: leave this field as it is (None for due_date means "no due date").
+KEEP = object()
+
+SELECT = """SELECT t.id, t.list_id, t.title, t.status, t.due_date, c.username AS created_by, d.username AS done_by,
                    t.created_at, t.updated_at
             FROM tasks t
             LEFT JOIN users c ON c.id = t.created_by
@@ -30,13 +33,14 @@ def list_tasks(conn: sqlite3.Connection, list_id: str) -> list[dict]:
     return [_to_dict(row) for row in rows]
 
 
-def create_task(conn: sqlite3.Connection, task_id: str, list_id: str, title: str, user_id: int) -> tuple[dict, bool]:
+def create_task(conn: sqlite3.Connection, task_id: str, list_id: str, title: str, user_id: int,
+                due_date: str | None = None) -> tuple[dict, bool]:
     """(task, created). If the id exists already (a device retrying), the stored task, unchanged."""
     try:
         with conn:
             conn.execute(
-                "INSERT INTO tasks (id, list_id, title, created_by) VALUES (?, ?, ?, ?)",
-                (task_id, list_id, title, user_id),
+                "INSERT INTO tasks (id, list_id, title, created_by, due_date) VALUES (?, ?, ?, ?, ?)",
+                (task_id, list_id, title, user_id, due_date),
             )
     except sqlite3.IntegrityError:
         existing = get_task(conn, task_id)
@@ -47,14 +51,17 @@ def create_task(conn: sqlite3.Connection, task_id: str, list_id: str, title: str
 
 
 def update_task(conn: sqlite3.Connection, task_id: str, user_id: int, *, title: str | None = None,
-                done: bool | None = None, status: str | None = None) -> dict | None:
-    """Changes only the fields given. status wins over done; done=False reopens only a done task
-    (an older page unticking must not undo "in progress"). Finishing records who did it; any other
-    status clears that. None if there is no such task."""
+                done: bool | None = None, status: str | None = None, due_date=KEEP) -> dict | None:
+    """Changes only the fields given (due_date=None removes the due date). status wins over done;
+    done=False reopens only a done task (an older page unticking must not undo "in progress").
+    Finishing records who did it; any other status clears that. None if there is no such task."""
     assignments, values = [], []
     if title is not None:
         assignments.append("title = ?")
         values.append(title)
+    if due_date is not KEEP:
+        assignments.append("due_date = ?")
+        values.append(due_date)
     if status is None and done is not None:
         status = "done" if done else None
         if not done:

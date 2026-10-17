@@ -162,6 +162,31 @@ def test_migration_5_turns_done_into_a_status(tmp_path, monkeypatch):
             raise AssertionError("status must be new, progress or done")
 
 
+def test_migration_6_adds_an_empty_due_date(tmp_path, monkeypatch):
+    path = str(tmp_path / "taskly.db")
+    migrate_to(path, 5, monkeypatch)
+    with sqlite3.connect(path) as conn:
+        conn.executescript("""
+            INSERT INTO users (username, password_hash) VALUES ('maria', 'x');
+            INSERT INTO lists (id, name, owner_id) VALUES ('l1', 'Food', 1);
+            INSERT INTO tasks (id, list_id, title, status) VALUES ('t1', 'l1', 'Milk', 'progress');
+        """)
+
+    assert db.migrate(path) == len(db.MIGRATIONS)
+
+    assert rows(path, "SELECT id, status, due_date FROM tasks") == [{"id": "t1", "status": "progress", "due_date": None}]
+    with sqlite3.connect(path) as conn:
+        conn.execute("UPDATE tasks SET due_date = '2026-10-17' WHERE id = 't1'")
+        for wrong in ["2026-02-30", "2026-10-17 09:00", "tomorrow"]:
+            try:
+                conn.execute("UPDATE tasks SET due_date = ? WHERE id = 't1'", (wrong,))
+            except sqlite3.IntegrityError:
+                pass
+            else:
+                raise AssertionError(f"{wrong!r} isn't a calendar day")
+    assert rows(path, "SELECT due_date FROM tasks") == [{"due_date": "2026-10-17"}]
+
+
 def test_deleting_a_list_deletes_its_tasks_and_members(tmp_path):
     path = str(tmp_path / "taskly.db")
     db.migrate(path)

@@ -92,6 +92,32 @@ def test_create_task(client):
     assert (task["created_by"], task["done_by"]) == ("maria", None)
 
 
+def test_due_dates(client):
+    made = new_list(client)
+    response = client.post("/api/tasks", json={"id": str(uuid.uuid4()), "list_id": made["id"], "title": "Milk", "due_date": "2026-10-17"})
+    assert response.status_code == 201
+    task = response.json()
+    assert task["due_date"] == "2026-10-17"
+    path = f"/api/tasks/{task['id']}"
+    # A page from before due dates leaves it alone.
+    assert client.patch(path, json={"status": "progress"}).json()["due_date"] == "2026-10-17"
+    assert client.patch(path, json={"due_date": "2026-11-01"}).json()["due_date"] == "2026-11-01"
+    assert client.patch(path, json={"due_date": None}).json()["due_date"] is None
+    assert sync(client)["lists"][0]["tasks"][0]["due_date"] is None
+    assert new_task(client, made["id"], "Eggs")["due_date"] is None
+
+
+def test_a_due_date_is_only_a_calendar_day(client):
+    made = new_list(client)
+    task = new_task(client, made["id"])
+    path = f"/api/tasks/{task['id']}"
+    for wrong in ["2026-02-30", "2026-10-17T09:00:00Z", "17/10/2026", "2026-1-7", "", 1760659200]:
+        assert client.patch(path, json={"due_date": wrong}).status_code == 422, wrong
+        created = client.post("/api/tasks", json={"id": str(uuid.uuid4()), "list_id": made["id"], "title": "x", "due_date": wrong})
+        assert created.status_code == 422, wrong
+    assert client.get("/api/sync").json()["lists"][0]["tasks"][0]["due_date"] is None
+
+
 def test_a_retried_create_changes_nothing(client):
     made = new_list(client)
     task = new_task(client, made["id"], "Milk")

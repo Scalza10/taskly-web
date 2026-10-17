@@ -135,6 +135,11 @@ MIGRATIONS = [
     UPDATE tasks SET status = 'done' WHERE done;
     ALTER TABLE tasks DROP COLUMN done;
     """,
+    # 6: an optional due date per task: a calendar day ('2026-10-17'), no time or zone; the page
+    # compares it with the device's own date. date() of anything else isn't the same text.
+    """
+    ALTER TABLE tasks ADD COLUMN due_date TEXT CHECK (due_date IS NULL OR date(due_date) IS due_date);
+    """,
 ]
 
 

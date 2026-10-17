@@ -69,7 +69,7 @@ def find_list(conn: sqlite3.Connection, user_id: int, ref: str) -> str:
 
 def _task(task: dict) -> dict:
     """A task as the agent sees it: list_id is implied by where it is."""
-    return {key: task[key] for key in ("id", "title", "status", "done", "created_by", "done_by", "created_at")}
+    return {key: task[key] for key in ("id", "title", "status", "done", "due_date", "created_by", "done_by", "created_at")}
 
 
 def _my_task(conn: sqlite3.Connection, user_id: int, task_id: str) -> dict:

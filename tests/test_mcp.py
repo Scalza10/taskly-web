@@ -120,6 +120,15 @@ def test_open_and_all_tasks(client, token):
     assert sorted(t["title"] for t in one["tasks"]) == ["Eggs", "Milk"]
 
 
+def test_agents_see_due_dates(client, token):
+    groceries = new_list(client)
+    milk = new_task(client, groceries["id"], "Milk")
+    new_task(client, groceries["id"], "Eggs")
+    client.patch(f"/api/tasks/{milk['id']}", json={"due_date": "2026-10-17"})
+    [one] = call(client, token, "list_tasks", list=groceries["id"])["lists"]
+    assert {t["title"]: t["due_date"] for t in one["tasks"]} == {"Milk": "2026-10-17", "Eggs": None}
+
+
 def test_close_and_reopen_a_task(client, token):
     milk = new_task(client, new_list(client)["id"], "Milk")
     closed = call(client, token, "complete_task", task_id=milk["id"])

@@ -31,6 +31,7 @@ def test_create_returns_the_task_with_its_author(conn, maria, groceries):
     assert created is True
     assert task["id"] == task_id and task["list_id"] == groceries
     assert (task["title"], task["status"], task["done"], task["created_by"], task["done_by"]) == ("Milk", "new", False, "maria", None)
+    assert task["due_date"] is None
     assert task["created_at"].endswith("Z")
 
 
@@ -52,6 +53,16 @@ def test_update_records_who_ticked(conn, maria, tom, groceries):
     undone = tasks.update_task(conn, task["id"], maria["id"], done=False)
     assert (undone["status"], undone["done"], undone["done_by"]) == ("new", False, None)
     assert tasks.update_task(conn, new_id(), maria["id"], done=True) is None
+
+
+def test_a_due_date_is_set_kept_and_removed(conn, maria, groceries):
+    task, _ = tasks.create_task(conn, new_id(), groceries, "Milk", maria["id"], "2026-10-17")
+    assert task["due_date"] == "2026-10-17"
+    # Other changes leave it alone.
+    assert tasks.update_task(conn, task["id"], maria["id"], title="Oat milk", status="progress")["due_date"] == "2026-10-17"
+    assert tasks.update_task(conn, task["id"], maria["id"], due_date="2026-10-20")["due_date"] == "2026-10-20"
+    cleared = tasks.update_task(conn, task["id"], maria["id"], due_date=None)
+    assert (cleared["due_date"], cleared["title"], cleared["status"]) == (None, "Oat milk", "progress")
 
 
 def test_delete(conn, maria, groceries):
