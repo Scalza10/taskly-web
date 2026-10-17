@@ -1,18 +1,24 @@
 // The due date picker, a row under a task on the List screen (its calendar chip opens it):
-// Today, Tomorrow, any day (the device's own date picker, then Set), or no due date. Picking one
-// closes it; so do Cancel and Escape.
+// Today, Tomorrow, any day (the device's own date picker, then Set), or no due date; and an
+// optional time for any of them (an appointment), in this device's time. Picking one closes it;
+// so do Cancel and Escape. note: the time where it was set, when that reads differently here.
 import { useState, type FormEvent, type KeyboardEvent } from "react";
-import { addDays } from "./due";
+import { addDays, type DueInput } from "./due";
 
-type Props = { title: string; value: string | null; today: string; onPick: (dueDate: string | null) => void; onCancel: () => void };
+type Props = {
+  title: string; value: DueInput | null; note?: string; today: string;
+  onPick: (due: DueInput | null) => void; onCancel: () => void;
+};
 
-export function DuePicker({ title, value, today, onPick, onCancel }: Props) {
+export function DuePicker({ title, value, note, today, onPick, onCancel }: Props) {
   // Set, not the field's change: typing a year digit by digit makes dates like 0002-10-17 on the way.
-  const [day, setDay] = useState(value ?? "");
+  const [day, setDay] = useState(value?.date ?? "");
+  const [time, setTime] = useState(value?.time ?? "");
+  const pick = (date: string) => onPick({ date, time: time || null });
 
   function submit(event: FormEvent) {
     event.preventDefault();
-    if (day) onPick(day);
+    if (day) pick(day);
   }
 
   function onKeyDown(event: KeyboardEvent) {
@@ -21,14 +27,17 @@ export function DuePicker({ title, value, today, onPick, onCancel }: Props) {
 
   return (
     <form className="due-picker" aria-label={`due date of "${title}"`} onSubmit={submit} onKeyDown={onKeyDown}>
-      <button type="button" className="action" onClick={() => onPick(today)}>Today</button>
-      <button type="button" className="action" onClick={() => onPick(addDays(today, 1))}>Tomorrow</button>
+      <button type="button" className="action" onClick={() => pick(today)}>Today</button>
+      <button type="button" className="action" onClick={() => pick(addDays(today, 1))}>Tomorrow</button>
       <span className="due-day">
         <input type="date" aria-label="due date" value={day} onChange={(e) => setDay(e.target.value)} />
+        <input type="time" aria-label="due time (optional)" value={time} onChange={(e) => setTime(e.target.value)} />
+        {time && <button type="button" className="text" onClick={() => setTime("")}>No time</button>}
         <button type="submit" className="primary" disabled={!day}>Set</button>
       </span>
       {value && <button type="button" className="text" onClick={() => onPick(null)}>No due date</button>}
       <button type="button" className="text" onClick={onCancel}>Cancel</button>
+      {note && <p className="due-note">That's {note}.</p>}
     </form>
   );
 }

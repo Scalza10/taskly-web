@@ -4,7 +4,7 @@ import type { QueuedChange } from "./store";
 import { applyQueue, clearDoneChanges, statusText, syncedLabel } from "./view";
 
 function task(id: string, created_at: string, extra: Partial<Task> = {}): Task {
-  return { id, list_id: "L", title: id, status: "new", done: false, due_date: null, created_by: "tom", done_by: null, created_at, updated_at: created_at, ...extra };
+  return { id, list_id: "L", title: id, status: "new", done: false, due_date: null, due_time: null, due_zone: null, created_by: "tom", done_by: null, created_at, updated_at: created_at, ...extra };
 }
 
 const snapshot: Snapshot = {
@@ -74,8 +74,13 @@ test("a snapshot stored before tasks had a status reads done as the status", () 
 
 test("a snapshot stored before due dates has none", () => {
   const old = structuredClone(snapshot);
-  for (const t of old.lists[0].tasks) delete (t as Partial<Task>).due_date;
-  expect(applyQueue(old, []).lists[0].tasks.map((t) => t.due_date)).toEqual([null, null, null]);
+  for (const t of old.lists[0].tasks) {
+    delete (t as Partial<Task>).due_date;
+    delete (t as Partial<Task>).due_time;
+    delete (t as Partial<Task>).due_zone;
+  }
+  const tasks = applyQueue(old, []).lists[0].tasks;
+  expect(tasks.map((t) => [t.due_date, t.due_time, t.due_zone])).toEqual([[null, null, null], [null, null, null], [null, null, null]]);
 });
 
 test("due dates set, changed and removed offline, and on a task created offline", () => {
@@ -89,6 +94,24 @@ test("due dates set, changed and removed offline, and on a task created offline"
   const due = Object.fromEntries(view.lists[0].tasks.map((t) => [t.id, t.due_date]));
   expect(due).toEqual({ n1: "2026-10-17", eggs: "2026-10-18", bread: null, milk: null });
   expect(view.lists[0].tasks.find((t) => t.id === "bread")).toMatchObject({ pending: true });
+});
+
+test("a time comes and goes with its date, as on the server", () => {
+  const timed = { due_date: "2026-10-18", due_time: "15:00", due_zone: "America/New_York" };
+  const view = applyQueue(snapshot, [
+    { method: "POST", path: "/api/tasks", body: { id: "n1", list_id: "L", title: "dentist", ...timed }, queuedAt: at },
+    { method: "PATCH", path: "/api/tasks/eggs", body: timed, queuedAt: at },
+    { method: "PATCH", path: "/api/tasks/eggs", body: { title: "eggs (12)" }, queuedAt: at },
+    { method: "PATCH", path: "/api/tasks/bread", body: timed, queuedAt: at },
+    { method: "PATCH", path: "/api/tasks/bread", body: { due_date: "2026-10-19" }, queuedAt: at },
+  ]);
+  const due = Object.fromEntries(view.lists[0].tasks.map((t) => [t.id, [t.due_date, t.due_time, t.due_zone]]));
+  expect(due).toEqual({
+    n1: ["2026-10-18", "15:00", "America/New_York"],
+    eggs: ["2026-10-18", "15:00", "America/New_York"], // a rename leaves it alone
+    bread: ["2026-10-19", null, null], // a date alone has no time
+    milk: [null, null, null],
+  });
 });
 
 test("rename and delete", () => {

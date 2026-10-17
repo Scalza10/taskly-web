@@ -380,9 +380,12 @@ button.due-add:hover { background: var(--ground); }
 /* The due date picker: a row under the task, across it. */
 .due-picker { display: flex; grid-column: 2 / -1; flex-wrap: wrap; align-items: center; gap: 8px; padding-top: 6px; }
 .due-picker .action { margin-left: 0; }
-.due-day { display: flex; align-items: center; gap: 6px; }
+.due-day { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
 .due-day input { height: 34px; padding: 0 12px; border: 1px solid var(--track); border-radius: 999px; background: var(--ground); color: var(--text); font-size: 13px; }
 .due-day .primary { height: 34px; padding: 0 14px; font-size: 13px; }
+.due-day .text { padding: 6px 8px; font-size: 13px; }
+/* "That's 3:00 PM New York time.": a time set in another zone. */
+.due-note { flex-basis: 100%; font-size: 12px; color: var(--muted); }
 
 /* "Due today": the List's filter, next to the list picker. */
 .filter {

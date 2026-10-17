@@ -9,7 +9,7 @@ import { useState, type DragEvent } from "react";
 import type { Status, Task, TaskList } from "./api";
 import { Avatar, Empty } from "./Chrome";
 import { ClearDone } from "./ClearDone";
-import { dueOf, localDay } from "./due";
+import { dueOf } from "./due";
 import { STAGES, moveChange, stage } from "./stages";
 import type { Enqueue } from "./useLocal";
 import { useWide } from "./useWide";
@@ -20,7 +20,7 @@ export function BoardScreen({ list, enqueue, onFocus }: Props) {
   const wide = useWide();
   const [dragging, setDragging] = useState<Task | null>(null);
   const [over, setOver] = useState<Status | null>(null);
-  const today = localDay(new Date());
+  const now = new Date();
 
   function endDrag() {
     setDragging(null);
@@ -67,7 +67,7 @@ export function BoardScreen({ list, enqueue, onFocus }: Props) {
             </h2>
             {tasks.length === 0 && <Empty>Nothing here yet.</Empty>}
             {tasks.map((task) => {
-              const due = dueOf(task, today);
+              const due = dueOf(task, now);
               return (
                 <article
                   key={task.id}

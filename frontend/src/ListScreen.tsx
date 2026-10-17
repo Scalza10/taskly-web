@@ -40,9 +40,10 @@ export function ListScreen({ lists, current, me, local, enqueue, found, onChoose
   const [dueOnly, setDueOnly] = useState(false);
   const online = local.sync.connection === "online";
   const toggle = (which: Panel) => setPanel(panel === which ? "none" : which);
-  // Worked out on every draw (each sync redraws, at least every 30 s), so it moves on at midnight.
-  const today = localDay(new Date());
-  const due = current ? dueToday(current.tasks, today) : [];
+  // Worked out on every draw (each sync redraws, at least every 30 s), so it moves on at midnight
+  // and a time turns overdue when it passes.
+  const now = new Date();
+  const due = current ? dueToday(current.tasks, now) : [];
 
   useEffect(() => {
     if (found) setDueOnly(false);
@@ -114,7 +115,7 @@ export function ListScreen({ lists, current, me, local, enqueue, found, onChoose
       {wide && panels}
       <h1 className="headline">{current ? headline(dueOnly ? due : current.tasks) : "No lists yet."}</h1>
       {current ? (
-        <Tasks key={current.id} list={current} shown={dueOnly ? due : current.tasks} dueOnly={dueOnly} today={today}
+        <Tasks key={current.id} list={current} shown={dueOnly ? due : current.tasks} dueOnly={dueOnly} now={now}
           enqueue={enqueue} wide={wide} found={found} onFocus={onFocus} />
       ) : (
         <Empty>Make one with “New list”.</Empty>
@@ -135,11 +136,11 @@ export function ListScreen({ lists, current, me, local, enqueue, found, onChoose
 // The add bar, the tasks shown, then "Clear done". The device picks a new task's id. While only the
 // tasks due today show, a task added is due today too, so it doesn't vanish as it's added.
 type TasksProps = {
-  list: TaskList; shown: TaskList["tasks"]; dueOnly: boolean; today: string;
+  list: TaskList; shown: TaskList["tasks"]; dueOnly: boolean; now: Date;
   enqueue: Enqueue; wide: boolean; found: string | null; onFocus: (taskId: string) => void;
 };
 
-function Tasks({ list, shown, dueOnly, today, enqueue, wide, found, onFocus }: TasksProps) {
+function Tasks({ list, shown, dueOnly, now, enqueue, wide, found, onFocus }: TasksProps) {
   const [title, setTitle] = useState("");
   const titleInput = useRef<HTMLInputElement>(null);
 
@@ -147,7 +148,7 @@ function Tasks({ list, shown, dueOnly, today, enqueue, wide, found, onFocus }: T
     event.preventDefault();
     const trimmed = title.trim();
     if (!trimmed) return;
-    const body = { id: crypto.randomUUID(), list_id: list.id, title: trimmed, ...(dueOnly && { due_date: today }) };
+    const body = { id: crypto.randomUUID(), list_id: list.id, title: trimmed, ...(dueOnly && { due_date: localDay(now) }) };
     await enqueue({ method: "POST", path: "/api/tasks", body });
     setTitle("");
     titleInput.current?.focus();
@@ -173,7 +174,7 @@ function Tasks({ list, shown, dueOnly, today, enqueue, wide, found, onFocus }: T
       {shown.length > 0 ? (
         <>
           <ul className="tasks">
-            {shown.map((task) => <TaskItem key={task.id} task={task} today={today} enqueue={enqueue} onFocus={onFocus} found={task.id === found} />)}
+            {shown.map((task) => <TaskItem key={task.id} task={task} now={now} enqueue={enqueue} onFocus={onFocus} found={task.id === found} />)}
           </ul>
           {!dueOnly && <ClearDone list={list} enqueue={enqueue} />}
         </>
