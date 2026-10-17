@@ -4,7 +4,7 @@ import type { QueuedChange } from "./store";
 import { applyQueue, clearDoneChanges, statusText, syncedLabel } from "./view";
 
 function task(id: string, created_at: string, extra: Partial<Task> = {}): Task {
-  return { id, list_id: "L", title: id, status: "new", done: false, created_by: "tom", done_by: null, created_at, updated_at: created_at, ...extra };
+  return { id, list_id: "L", title: id, status: "new", done: false, due_date: null, created_by: "tom", done_by: null, created_at, updated_at: created_at, ...extra };
 }
 
 const snapshot: Snapshot = {
@@ -70,6 +70,25 @@ test("a snapshot stored before tasks had a status reads done as the status", () 
   const old = structuredClone(snapshot);
   for (const t of old.lists[0].tasks) delete (t as Partial<Task>).status;
   expect(applyQueue(old, []).lists[0].tasks.map((t) => t.status)).toEqual(["new", "new", "done"]);
+});
+
+test("a snapshot stored before due dates has none", () => {
+  const old = structuredClone(snapshot);
+  for (const t of old.lists[0].tasks) delete (t as Partial<Task>).due_date;
+  expect(applyQueue(old, []).lists[0].tasks.map((t) => t.due_date)).toEqual([null, null, null]);
+});
+
+test("due dates set, changed and removed offline, and on a task created offline", () => {
+  const view = applyQueue(snapshot, [
+    { method: "POST", path: "/api/tasks", body: { id: "n1", list_id: "L", title: "jam", due_date: "2026-10-17" }, queuedAt: at },
+    { method: "PATCH", path: "/api/tasks/eggs", body: { due_date: "2026-10-18" }, queuedAt: at },
+    { method: "PATCH", path: "/api/tasks/bread", body: { due_date: "2026-10-18" }, queuedAt: at },
+    { method: "PATCH", path: "/api/tasks/bread", body: { due_date: null }, queuedAt: at },
+    { method: "PATCH", path: "/api/tasks/eggs", body: { status: "progress" }, queuedAt: at },
+  ]);
+  const due = Object.fromEntries(view.lists[0].tasks.map((t) => [t.id, t.due_date]));
+  expect(due).toEqual({ n1: "2026-10-17", eggs: "2026-10-18", bread: null, milk: null });
+  expect(view.lists[0].tasks.find((t) => t.id === "bread")).toMatchObject({ pending: true });
 });
 
 test("rename and delete", () => {

@@ -8,10 +8,10 @@ const TASKS = "/api/tasks";
 export type Connection = "online" | "offline" | "trouble";
 
 export function applyQueue(snapshot: Snapshot, queue: QueuedChange[]): Snapshot {
-  // A snapshot stored by the page before tasks had a status has only done.
+  // A snapshot stored by the page before tasks had a status has only done; one from before due dates has none.
   const lists = snapshot.lists.map((list) => ({
     ...list,
-    tasks: list.tasks.map((task) => ({ ...task, status: task.status ?? (task.done ? "done" : "new") })),
+    tasks: list.tasks.map((task) => ({ ...task, status: task.status ?? (task.done ? "done" : "new"), due_date: task.due_date ?? null })),
   }));
   const find = (id: string) => {
     for (const list of lists) {
@@ -23,11 +23,11 @@ export function applyQueue(snapshot: Snapshot, queue: QueuedChange[]): Snapshot 
 
   for (const change of queue) {
     if (change.method === "POST" && change.path === TASKS) {
-      const body = change.body as { id: string; list_id: string; title: string };
+      const body = change.body as { id: string; list_id: string; title: string; due_date?: string | null };
       const list = lists.find((l) => l.id === body.list_id);
       if (!list || find(body.id)) continue;
       list.tasks.push({
-        id: body.id, list_id: body.list_id, title: body.title, status: "new", done: false,
+        id: body.id, list_id: body.list_id, title: body.title, status: "new", done: false, due_date: body.due_date ?? null,
         created_by: snapshot.me, done_by: null, created_at: change.queuedAt, updated_at: change.queuedAt, pending: true,
       });
       continue;
@@ -39,9 +39,10 @@ export function applyQueue(snapshot: Snapshot, queue: QueuedChange[]): Snapshot 
       found.list.tasks.splice(found.index, 1);
       continue;
     }
-    const body = change.body as { title?: string; done?: boolean; status?: Status };
+    const body = change.body as { title?: string; done?: boolean; status?: Status; due_date?: string | null };
     const task = found.list.tasks[found.index];
     if (body.title !== undefined) task.title = body.title;
+    if (body.due_date !== undefined) task.due_date = body.due_date; // null removes it
     const status = nextStatus(task.status, body);
     if (status !== undefined) {
       task.status = status;

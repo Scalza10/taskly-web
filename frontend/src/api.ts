@@ -5,6 +5,7 @@ export type Status = "new" | "progress" | "done";
 
 export type Task = {
   id: string; list_id: string; title: string; status: Status; done: boolean;
+  due_date: string | null; // a calendar day, "2026-10-17" (see due.ts)
   created_by: string | null; done_by: string | null; created_at: string; updated_at: string;
   pending?: boolean; // only on this device: a change not sent yet
 };
