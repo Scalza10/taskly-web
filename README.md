@@ -72,8 +72,8 @@ each test gets its own database, so your local data is untouched) and
 | `DELETE /api/lists/{id}` | | 204; its tasks go too. Owner only |
 | `POST /api/lists/{id}/members` | `{"username": "tom"}` | 201 (200 if already in). Owner only; 404 for a name that is unknown or disabled |
 | `DELETE /api/lists/{id}/members/{username}` | | 204. The owner removes anyone; anyone can remove themselves (leave), except the owner (409) |
-| `POST /api/tasks` | `{"id": "<uuid>", "list_id": "<uuid>", "title": "Milk"}` | 201 and the task. The same `id` again in the same list: 200 and the stored task (a safe retry). The same `id` in another list: 409 |
-| `PATCH /api/tasks/{id}` | Any of `{"title", "status", "done"}` | The task. `status` is `"new"`, `"progress"` or `"done"` (anything else: 422). `done: true` is status done; `done: false` reopens a done task as new and leaves one in progress alone. `status` wins if both are sent. Finishing records you as `done_by`; any other status clears it |
+| `POST /api/tasks` | `{"id": "<uuid>", "list_id": "<uuid>", "title": "Milk"}`, optionally `"due_date": "2026-10-17"` | 201 and the task. The same `id` again in the same list: 200 and the stored task (a safe retry). The same `id` in another list: 409 |
+| `PATCH /api/tasks/{id}` | Any of `{"title", "status", "done", "due_date"}` | The task. `status` is `"new"`, `"progress"` or `"done"` (anything else: 422). `done: true` is status done; `done: false` reopens a done task as new and leaves one in progress alone. `status` wins if both are sent. Finishing records you as `done_by`; any other status clears it. `due_date: null` removes the due date; left out, it stays |
 | `DELETE /api/tasks/{id}` | | 204 |
 
 Every `/api` endpoint except login needs the session cookie (401 otherwise).
@@ -93,10 +93,12 @@ Writes from another site (an `Origin` header that isn't this site) get 403.
 The site's address in these answers comes from the request (`https://<site>` behind Caddy,
 `http://localhost:8000` locally), so there is nothing to configure.
 
-A task is `{"id", "list_id", "title", "status", "done", "created_by", "done_by",
+A task is `{"id", "list_id", "title", "status", "done", "due_date", "created_by", "done_by",
 "created_at", "updated_at"}`: `status` is `"new"`, `"progress"` (in progress) or
 `"done"`, and `done` is `status == "done"` (kept for pages and agents from before
-statuses); people by username (`null` for tasks from before
+statuses); `due_date` is a calendar day (`"2026-10-17"`, no time or zone; anything
+else answers 422) or `null`, and the page decides by the device's own date whether
+it is today, tomorrow or overdue; people by username (`null` for tasks from before
 accounts), times in UTC set by the server (`2026-09-28T12:00:00Z`). Task ids are
 UUIDs the page makes itself. Titles are trimmed and 1–500 characters, list names
 1–100 (422 otherwise). Anything in a list you're not in answers 404, as if it
@@ -154,7 +156,7 @@ in Chrome and Edge, and shows these steps elsewhere (it's hidden in the installe
 - **Android (Chrome):** menu → **Install app** (or "Add to Home screen").
 - **Laptop (Chrome or Edge):** the install icon at the end of the address bar.
 
-**Offline** you can see and search your lists and add, tick, rename and delete tasks, and clear a list's done ones. The
+**Offline** you can see and search your lists, add, tick, rename and delete tasks, set their due dates, and clear a list's done ones. The
 line at the bottom says how many changes are waiting; they're sent when you're
 back online and the app is open (it doesn't sync in the background). It syncs
 when opened, every 30 seconds while open, and when you press **Sync** in the menu. Creating
@@ -185,7 +187,7 @@ and the page shows the changes on its next sync.
 | Tool | Does |
 |---|---|
 | `list_lists` | Your lists: name, owner, members, and how many tasks are open (in progress included), in progress, and done |
-| `list_tasks` | The open tasks of one list (by name or id) or of every list, oldest first, each with its `status`; `include_done` adds the finished ones |
+| `list_tasks` | The open tasks of one list (by name or id) or of every list, oldest first, each with its `status` and `due_date`; `include_done` adds the finished ones |
 | `create_list` | Makes a list you own |
 | `add_tasks` | Adds one or more tasks (up to 50) to a list, by name or id |
 | `complete_task` | Closes a task; `done: false` opens it again |
@@ -273,7 +275,8 @@ frontend/
     store.ts, view.ts, sync.ts, device.ts, useLocal.ts, StatusLine.tsx   the device's copy (IndexedDB) and its queue of unsent changes, what the screen shows, syncing, the page's one store and sync, the hook that triggers syncs, the "N changes waiting" line
     Login.tsx, Header.tsx, ChangePassword.tsx   the login screen, the header (screen tabs, your name, light/dark, the menu) and the phone's tab bar, the password form
     ListsPage.tsx   everything after logging in: the header and the List, Board and Focus screens
-    ListScreen.tsx, TaskItem.tsx, NewList.tsx, ListSettings.tsx   the List screen: the picker, the add bar, the tasks, new list, members and rename/delete
+    ListScreen.tsx, TaskItem.tsx, NewList.tsx, ListSettings.tsx   the List screen: the picker, the "Due today" filter, the add bar, the tasks, new list, members and rename/delete
+    DuePicker.tsx, due.ts   a task's due date: the picker under a task (Today, Tomorrow, any day, none), and the chips' labels (today, tomorrow, overdue) and the filter, by the device's date
     BoardScreen.tsx   the Board: New, In progress and Done columns; buttons move a card, and on a desktop so does dragging it
     ClearDone.tsx   "Clear done" (List and Board): deletes a list's finished tasks after an inline confirmation
     SearchScreen.tsx, search.ts   search every list (the header's magnifier), on the device's copy
@@ -296,15 +299,15 @@ docs/
 One SQLite file: `/data/taskly.db` in the container, which is
 `~/taskly/data/taskly.db` on the VM. Deploys back it up and apply new migrations to it, but never replace it.
 
-![The tables in taskly.db at schema 4: users, sessions, lists, list_members and tasks, and for AI agents oauth_clients, oauth_codes, oauth_grants and oauth_tokens, and the columns that point from one to another](docs/data-model.svg)
+![The tables in taskly.db at schema 6: users, sessions, lists, list_members and tasks, and for AI agents oauth_clients, oauth_codes, oauth_grants and oauth_tokens, and the columns that point from one to another](docs/data-model.svg)
 
 [`docs/data-model.html`](docs/data-model.html) is the same diagram, interactive (open it
 from a clone in a browser): select a table, column or line for its rules and the code that
-uses it, step through schema versions 1 to 4, and see what `/api/sync` sends and what the
+uses it, step through schema versions 1 to 6, and see what `/api/sync` sends and what the
 phone keeps in IndexedDB.
 
 **Changing the schema:** append an SQL string to `MIGRATIONS` in `db.py`, for
-example `"ALTER TABLE tasks ADD COLUMN due_date TEXT;"`. On startup the app runs
+example `"ALTER TABLE tasks ADD COLUMN notes TEXT;"`. On startup the app runs
 every migration the file hasn't had yet (it tracks them in `PRAGMA
 user_version`), each in its own transaction. Never edit or reorder a migration
 that has been deployed: the VM's database already ran it and won't run it again.
