@@ -1,11 +1,13 @@
-// The List screen: which list (with its settings and a new one), how many things are open, the
-// add bar, and the tasks. On a phone the list's links and the sync status move to the bottom.
-import { ChevronDown, Plus } from "lucide-react";
-import { useRef, useState, type FormEvent } from "react";
+// The List screen: which list (with its settings and a new one), the "Due today" filter, how many
+// things are open, the add bar, and the tasks. On a phone the list's links and the sync status
+// move to the bottom.
+import { CalendarCheck, ChevronDown, Plus } from "lucide-react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { ApiError, type TaskList } from "./api";
 import { Empty } from "./Chrome";
 import { ClearDone } from "./ClearDone";
 import { sync } from "./device";
+import { dueToday, localDay } from "./due";
 import { ListSettings } from "./ListSettings";
 import { isLoggedOut } from "./messages";
 import { NewList } from "./NewList";
@@ -34,8 +36,18 @@ export function ListScreen({ lists, current, me, local, enqueue, found, onChoose
   const wide = useWide();
   const [panel, setPanel] = useState<Panel>("none");
   const [error, setError] = useState<string | null>(null);
+  // "Due today": only the open tasks due today or overdue. Off for a task opened from search.
+  const [dueOnly, setDueOnly] = useState(false);
   const online = local.sync.connection === "online";
   const toggle = (which: Panel) => setPanel(panel === which ? "none" : which);
+  // Worked out on every draw (each sync redraws, at least every 30 s), so it moves on at midnight
+  // and a time turns overdue when it passes.
+  const now = new Date();
+  const due = current ? dueToday(current.tasks, now) : [];
+
+  useEffect(() => {
+    if (found) setDueOnly(false);
+  }, [found]);
 
   async function change<T>(request: () => Promise<T>): Promise<T | undefined> {
     let result: T | undefined;
@@ -90,13 +102,21 @@ export function ListScreen({ lists, current, me, local, enqueue, found, onChoose
               <ChevronDown size={wide ? 16 : 14} strokeWidth={2.5} aria-hidden="true" />
             </label>
           )}
+          {current && (due.length > 0 || dueOnly) && (
+            <button type="button" className="filter" aria-pressed={dueOnly} onClick={() => setDueOnly(!dueOnly)}>
+              <CalendarCheck size={wide ? 16 : 14} strokeWidth={2.5} aria-hidden="true" />
+              Due today
+              <span className="count">{due.length}</span>
+            </button>
+          )}
           {wide && links}
         </div>
       )}
       {wide && panels}
-      <h1 className="headline">{current ? headline(current.tasks) : "No lists yet."}</h1>
+      <h1 className="headline">{current ? headline(dueOnly ? due : current.tasks) : "No lists yet."}</h1>
       {current ? (
-        <Tasks key={current.id} list={current} enqueue={enqueue} wide={wide} found={found} onFocus={onFocus} />
+        <Tasks key={current.id} list={current} shown={dueOnly ? due : current.tasks} dueOnly={dueOnly} now={now}
+          enqueue={enqueue} wide={wide} found={found} onFocus={onFocus} />
       ) : (
         <Empty>Make one with “New list”.</Empty>
       )}
@@ -113,10 +133,14 @@ export function ListScreen({ lists, current, me, local, enqueue, found, onChoose
   );
 }
 
-// The add bar, the tasks, then "Clear done". The device picks a new task's id.
-type TasksProps = { list: TaskList; enqueue: Enqueue; wide: boolean; found: string | null; onFocus: (taskId: string) => void };
+// The add bar, the tasks shown, then "Clear done". The device picks a new task's id. While only the
+// tasks due today show, a task added is due today too, so it doesn't vanish as it's added.
+type TasksProps = {
+  list: TaskList; shown: TaskList["tasks"]; dueOnly: boolean; now: Date;
+  enqueue: Enqueue; wide: boolean; found: string | null; onFocus: (taskId: string) => void;
+};
 
-function Tasks({ list, enqueue, wide, found, onFocus }: TasksProps) {
+function Tasks({ list, shown, dueOnly, now, enqueue, wide, found, onFocus }: TasksProps) {
   const [title, setTitle] = useState("");
   const titleInput = useRef<HTMLInputElement>(null);
 
@@ -124,7 +148,8 @@ function Tasks({ list, enqueue, wide, found, onFocus }: TasksProps) {
     event.preventDefault();
     const trimmed = title.trim();
     if (!trimmed) return;
-    await enqueue({ method: "POST", path: "/api/tasks", body: { id: crypto.randomUUID(), list_id: list.id, title: trimmed } });
+    const body = { id: crypto.randomUUID(), list_id: list.id, title: trimmed, ...(dueOnly && { due_date: localDay(now) }) };
+    await enqueue({ method: "POST", path: "/api/tasks", body });
     setTitle("");
     titleInput.current?.focus();
   }
@@ -139,22 +164,22 @@ function Tasks({ list, enqueue, wide, found, onFocus }: TasksProps) {
           value={title}
           onChange={(e) => setTitle(e.target.value)}
           maxLength={500}
-          placeholder="What needs doing?"
+          placeholder={dueOnly ? "What needs doing today?" : "What needs doing?"}
         />
         <button type="submit" className="primary add" aria-label={wide ? undefined : "Add"}>
           <Plus size={wide ? 18 : 20} strokeWidth={2.5} aria-hidden="true" />
           {wide && "Add"}
         </button>
       </form>
-      {list.tasks.length > 0 ? (
+      {shown.length > 0 ? (
         <>
           <ul className="tasks">
-            {list.tasks.map((task) => <TaskItem key={task.id} task={task} enqueue={enqueue} onFocus={onFocus} found={task.id === found} />)}
+            {shown.map((task) => <TaskItem key={task.id} task={task} now={now} enqueue={enqueue} onFocus={onFocus} found={task.id === found} />)}
           </ul>
-          <ClearDone list={list} enqueue={enqueue} />
+          {!dueOnly && <ClearDone list={list} enqueue={enqueue} />}
         </>
       ) : (
-        <Empty>Nothing to do. Add something above.</Empty>
+        <Empty>{dueOnly ? "Nothing due today." : "Nothing to do. Add something above."}</Empty>
       )}
     </>
   );

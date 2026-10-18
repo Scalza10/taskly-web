@@ -31,6 +31,7 @@ def test_create_returns_the_task_with_its_author(conn, maria, groceries):
     assert created is True
     assert task["id"] == task_id and task["list_id"] == groceries
     assert (task["title"], task["status"], task["done"], task["created_by"], task["done_by"]) == ("Milk", "new", False, "maria", None)
+    assert task["due_date"] is None
     assert task["created_at"].endswith("Z")
 
 
@@ -52,6 +53,29 @@ def test_update_records_who_ticked(conn, maria, tom, groceries):
     undone = tasks.update_task(conn, task["id"], maria["id"], done=False)
     assert (undone["status"], undone["done"], undone["done_by"]) == ("new", False, None)
     assert tasks.update_task(conn, new_id(), maria["id"], done=True) is None
+
+
+def test_a_due_date_is_set_kept_and_removed(conn, maria, groceries):
+    task, _ = tasks.create_task(conn, new_id(), groceries, "Milk", maria["id"], "2026-10-17")
+    assert task["due_date"] == "2026-10-17"
+    # Other changes leave it alone.
+    assert tasks.update_task(conn, task["id"], maria["id"], title="Oat milk", status="progress")["due_date"] == "2026-10-17"
+    assert tasks.update_task(conn, task["id"], maria["id"], due_date="2026-10-20")["due_date"] == "2026-10-20"
+    cleared = tasks.update_task(conn, task["id"], maria["id"], due_date=None)
+    assert (cleared["due_date"], cleared["title"], cleared["status"]) == (None, "Oat milk", "progress")
+
+
+def test_a_due_time_goes_with_its_date(conn, maria, groceries):
+    task, _ = tasks.create_task(conn, new_id(), groceries, "Dentist", maria["id"], "2026-10-18", "15:00", "America/New_York")
+    assert (task["due_date"], task["due_time"], task["due_zone"]) == ("2026-10-18", "15:00", "America/New_York")
+    assert tasks.update_task(conn, task["id"], maria["id"], status="progress")["due_time"] == "15:00"
+    # A new date without a time is a date without a time.
+    moved = tasks.update_task(conn, task["id"], maria["id"], due_date="2026-10-19")
+    assert (moved["due_date"], moved["due_time"], moved["due_zone"]) == ("2026-10-19", None, None)
+    timed = tasks.update_task(conn, task["id"], maria["id"], due_date="2026-10-20", due_time="09:30", due_zone="Atlantic/Canary")
+    assert (timed["due_time"], timed["due_zone"]) == ("09:30", "Atlantic/Canary")
+    cleared = tasks.update_task(conn, task["id"], maria["id"], due_date=None)
+    assert (cleared["due_date"], cleared["due_time"], cleared["due_zone"]) == (None, None, None)
 
 
 def test_delete(conn, maria, groceries):
@@ -92,6 +116,33 @@ def test_tasks_sort_open_first_then_oldest(conn, maria, groceries):
     tasks.update_task(conn, ids["third"], maria["id"], status="progress")
     # All four share a created_at second; insertion order breaks the tie.
     assert [t["title"] for t in tasks.list_tasks(conn, groceries)] == ["second", "third", "fourth", "first"]
+
+
+def test_tasks_with_a_due_date_come_first_soonest_first(conn, maria, groceries):
+    def add(title, due_date=None, due_time=None, due_zone=None, status=None):
+        task, _ = tasks.create_task(conn, new_id(), groceries, title, maria["id"], due_date, due_time, due_zone)
+        if status:
+            tasks.update_task(conn, task["id"], maria["id"], status=status)
+    add("undated, oldest")
+    add("Oct 20", "2026-10-20")
+    add("Oct 18, 3 pm in Florida", "2026-10-18", "15:00", "America/New_York")  # 19:00 UTC
+    add("Oct 18, 6 pm in La Palma", "2026-10-18", "18:00", "Atlantic/Canary")  # 17:00 UTC: sooner
+    add("Oct 18, the day", "2026-10-18")  # the end of the day: after that day's times
+    add("Oct 17, done", "2026-10-17", status="done")
+    add("undated, newer")
+    add("Oct 19", "2026-10-19")
+    add("undated, done", status="done")
+    assert [t["title"] for t in tasks.list_tasks(conn, groceries)] == [
+        "Oct 18, 6 pm in La Palma", "Oct 18, 3 pm in Florida", "Oct 18, the day", "Oct 19", "Oct 20",
+        "undated, oldest", "undated, newer",
+        "Oct 17, done", "undated, done",
+    ]
+
+
+def test_the_latest_day_still_sorts(conn, maria, groceries):
+    tasks.create_task(conn, new_id(), groceries, "far", maria["id"], "9999-12-31")
+    tasks.create_task(conn, new_id(), groceries, "near", maria["id"], "0001-01-01", "00:00", "Asia/Tokyo")
+    assert [t["title"] for t in tasks.list_tasks(conn, groceries)] == ["near", "far"]
 
 
 def test_snapshot_has_only_my_lists_with_members_and_tasks(conn, maria, tom, groceries):

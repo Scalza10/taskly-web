@@ -1,10 +1,10 @@
-import { expect, test } from "vitest";
+import { expect, test, vi } from "vitest";
 import type { Snapshot, Task } from "./api";
 import type { QueuedChange } from "./store";
 import { applyQueue, clearDoneChanges, statusText, syncedLabel } from "./view";
 
 function task(id: string, created_at: string, extra: Partial<Task> = {}): Task {
-  return { id, list_id: "L", title: id, status: "new", done: false, created_by: "tom", done_by: null, created_at, updated_at: created_at, ...extra };
+  return { id, list_id: "L", title: id, status: "new", done: false, due_date: null, due_time: null, due_zone: null, created_by: "tom", done_by: null, created_at, updated_at: created_at, ...extra };
 }
 
 const snapshot: Snapshot = {
@@ -70,6 +70,73 @@ test("a snapshot stored before tasks had a status reads done as the status", () 
   const old = structuredClone(snapshot);
   for (const t of old.lists[0].tasks) delete (t as Partial<Task>).status;
   expect(applyQueue(old, []).lists[0].tasks.map((t) => t.status)).toEqual(["new", "new", "done"]);
+});
+
+test("a snapshot stored before due dates has none", () => {
+  const old = structuredClone(snapshot);
+  for (const t of old.lists[0].tasks) {
+    delete (t as Partial<Task>).due_date;
+    delete (t as Partial<Task>).due_time;
+    delete (t as Partial<Task>).due_zone;
+  }
+  const tasks = applyQueue(old, []).lists[0].tasks;
+  expect(tasks.map((t) => [t.due_date, t.due_time, t.due_zone])).toEqual([[null, null, null], [null, null, null], [null, null, null]]);
+});
+
+test("due dates set, changed and removed offline, and on a task created offline", () => {
+  const view = applyQueue(snapshot, [
+    { method: "POST", path: "/api/tasks", body: { id: "n1", list_id: "L", title: "jam", due_date: "2026-10-17" }, queuedAt: at },
+    { method: "PATCH", path: "/api/tasks/eggs", body: { due_date: "2026-10-18" }, queuedAt: at },
+    { method: "PATCH", path: "/api/tasks/bread", body: { due_date: "2026-10-18" }, queuedAt: at },
+    { method: "PATCH", path: "/api/tasks/bread", body: { due_date: null }, queuedAt: at },
+    { method: "PATCH", path: "/api/tasks/eggs", body: { status: "progress" }, queuedAt: at },
+  ]);
+  const due = Object.fromEntries(view.lists[0].tasks.map((t) => [t.id, t.due_date]));
+  expect(due).toEqual({ n1: "2026-10-17", eggs: "2026-10-18", bread: null, milk: null });
+  expect(view.lists[0].tasks.find((t) => t.id === "bread")).toMatchObject({ pending: true });
+});
+
+test("a time comes and goes with its date, as on the server", () => {
+  const timed = { due_date: "2026-10-18", due_time: "15:00", due_zone: "America/New_York" };
+  const view = applyQueue(snapshot, [
+    { method: "POST", path: "/api/tasks", body: { id: "n1", list_id: "L", title: "dentist", ...timed }, queuedAt: at },
+    { method: "PATCH", path: "/api/tasks/eggs", body: timed, queuedAt: at },
+    { method: "PATCH", path: "/api/tasks/eggs", body: { title: "eggs (12)" }, queuedAt: at },
+    { method: "PATCH", path: "/api/tasks/bread", body: timed, queuedAt: at },
+    { method: "PATCH", path: "/api/tasks/bread", body: { due_date: "2026-10-19" }, queuedAt: at },
+  ]);
+  const due = Object.fromEntries(view.lists[0].tasks.map((t) => [t.id, [t.due_date, t.due_time, t.due_zone]]));
+  expect(due).toEqual({
+    n1: ["2026-10-18", "15:00", "America/New_York"],
+    eggs: ["2026-10-18", "15:00", "America/New_York"], // a rename leaves it alone
+    bread: ["2026-10-19", null, null], // a date alone has no time
+    milk: [null, null, null],
+  });
+});
+
+test("tasks with a due date come first, soonest first; a date alone after that day's times", () => {
+  vi.stubEnv("TZ", "America/New_York"); // this device: Florida
+  try {
+    const list = (tasks: Task[]): Snapshot => ({ ...snapshot, lists: [{ ...snapshot.lists[0], tasks }] });
+    const shown = applyQueue(list([
+      task("undated, newer", "2026-10-10T08:00:00Z"),
+      task("Oct 20", "2026-10-10T09:00:00Z", { due_date: "2026-10-20" }),
+      task("Sun 3 pm in Florida", "2026-10-10T10:00:00Z", { due_date: "2026-10-18", due_time: "15:00", due_zone: "America/New_York" }),
+      task("Sun 6 pm in La Palma", "2026-10-10T11:00:00Z", { due_date: "2026-10-18", due_time: "18:00", due_zone: "Atlantic/Canary" }),
+      task("Sunday", "2026-10-10T12:00:00Z", { due_date: "2026-10-18" }),
+      task("Oct 17, done", "2026-10-10T13:00:00Z", { due_date: "2026-10-17", status: "done", done: true }),
+      task("undated, oldest", "2026-10-10T07:00:00Z"),
+    ]), []);
+    // 6 pm in La Palma is 1 pm in Florida, so it comes before 3 pm.
+    expect(titles(shown)).toEqual(["Sun 6 pm in La Palma", "Sun 3 pm in Florida", "Sunday", "Oct 20", "undated, oldest", "undated, newer", "Oct 17, done"]);
+  } finally {
+    vi.unstubAllEnvs();
+  }
+});
+
+test("setting a due date moves a task up, as the server will", () => {
+  const view = applyQueue(snapshot, [{ method: "PATCH", path: "/api/tasks/bread", body: { due_date: "2026-10-18" }, queuedAt: at }]);
+  expect(titles(view)).toEqual(["bread", "eggs", "milk"]);
 });
 
 test("rename and delete", () => {

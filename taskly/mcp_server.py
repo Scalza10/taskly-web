@@ -69,7 +69,8 @@ def find_list(conn: sqlite3.Connection, user_id: int, ref: str) -> str:
 
 def _task(task: dict) -> dict:
     """A task as the agent sees it: list_id is implied by where it is."""
-    return {key: task[key] for key in ("id", "title", "status", "done", "created_by", "done_by", "created_at")}
+    return {key: task[key] for key in ("id", "title", "status", "done", "due_date", "due_time", "due_zone",
+                                       "created_by", "done_by", "created_at")}
 
 
 def _my_task(conn: sqlite3.Connection, user_id: int, task_id: str) -> dict:
@@ -112,7 +113,8 @@ def build(settings: Settings) -> MCPServer:
         list: Annotated[str | None, Field(description="A list's name or id. Leave out for every list.")] = None,
         include_done: Annotated[bool, Field(description="Also return finished tasks.")] = False,
     ) -> dict:
-        """The open tasks (new or in progress) of one list, or of every list, oldest first.
+        """The open tasks (new or in progress) of one list, or of every list: soonest due first, then
+        the ones without a due date, oldest first.
         include_done adds the finished ones after them."""
         user = _user.get()
         with connection() as conn:

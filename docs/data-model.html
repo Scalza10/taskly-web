@@ -181,7 +181,7 @@ button:focus-visible, .src:focus-visible { outline: 2px solid var(--accent); out
   <p class="lede">What the server keeps in its one SQLite file, how the tables point at each other, and what a phone keeps of it.</p>
   <dl class="facts">
     <div><dt>File</dt><dd><code>/data/taskly.db</code> (<code>~/taskly/data</code> on the VM)</dd></div>
-    <div><dt>Schema</dt><dd><code>PRAGMA user_version = 4</code></dd></div>
+    <div><dt>Schema</dt><dd><code>PRAGMA user_version = 7</code></dd></div>
     <div><dt>Journal</dt><dd><code>journal_mode = WAL</code></dd></div>
     <div><dt>Foreign keys</dt><dd><code>ON</code>, set on every connection</dd></div>
     <div><dt>Times</dt><dd><code>2026-09-28T12:00:00Z</code>: UTC text, set by SQLite</dd></div>
@@ -197,7 +197,9 @@ button:focus-visible, .src:focus-visible { outline: 2px solid var(--accent); out
         <button type="button" data-version="2" aria-pressed="false">2 · accounts</button>
         <button type="button" data-version="3" aria-pressed="false">3 · named lists</button>
         <button type="button" data-version="4" aria-pressed="false">4 · agents</button>
-        <button type="button" data-version="5" aria-pressed="true">5 · status</button>
+        <button type="button" data-version="5" aria-pressed="false">5 · status</button>
+        <button type="button" data-version="6" aria-pressed="false">6 · due dates</button>
+        <button type="button" data-version="7" aria-pressed="true">7 · times</button>
       </div>
     </div>
     <p class="version-note" id="version-note"></p>
@@ -294,10 +296,12 @@ button:focus-visible, .src:focus-visible { outline: 2px solid var(--accent); out
         <div class="row" style="--d:1"><code class="k">"owner"</code><p class="v"><button type="button" class="src" data-col="lists.owner_id">lists.owner_id</button> as a username; null if unowned</p></div>
         <div class="row" style="--d:1"><code class="k">"role"</code><p class="v">"owner" if <button type="button" class="src" data-col="lists.owner_id">lists.owner_id</button> is you, else "member"</p></div>
         <div class="row" style="--d:1"><code class="k">"members"</code><p class="v"><button type="button" class="src" data-col="list_members.user_id">list_members.user_id</button> as usernames, active accounts only</p></div>
-        <div class="row" style="--d:1"><code class="k">"tasks": [ … ]</code><p class="v">not done first (in progress too), then oldest first</p></div>
+        <div class="row" style="--d:1"><code class="k">"tasks": [ … ]</code><p class="v">not done first (in progress too), then the ones with a due date, soonest first, then oldest first</p></div>
         <div class="row" style="--d:2"><code class="k">"id", "list_id", "title"</code><p class="v"><button type="button" class="src" data-col="tasks.id">tasks.id</button>, <button type="button" class="src" data-col="tasks.list_id">tasks.list_id</button>, <button type="button" class="src" data-col="tasks.title">tasks.title</button></p></div>
         <div class="row" style="--d:2"><code class="k">"status"</code><p class="v"><button type="button" class="src" data-col="tasks.status">tasks.status</button>: "new", "progress" or "done"</p></div>
         <div class="row" style="--d:2"><code class="k">"done"</code><p class="v">true when <button type="button" class="src" data-col="tasks.status">tasks.status</button> is "done", for pages and agents from before statuses</p></div>
+        <div class="row" style="--d:2"><code class="k">"due_date"</code><p class="v"><button type="button" class="src" data-col="tasks.due_date">tasks.due_date</button>: a day like "2026-10-17", or null</p></div>
+        <div class="row" style="--d:2"><code class="k">"due_time", "due_zone"</code><p class="v"><button type="button" class="src" data-col="tasks.due_time">tasks.due_time</button> like "15:00" in <button type="button" class="src" data-col="tasks.due_zone">tasks.due_zone</button> like "America/New_York", or both null</p></div>
         <div class="row" style="--d:2"><code class="k">"created_by", "done_by"</code><p class="v"><button type="button" class="src" data-col="tasks.created_by">tasks.created_by</button>, <button type="button" class="src" data-col="tasks.done_by">tasks.done_by</button> as usernames, or null</p></div>
         <div class="row" style="--d:2"><code class="k">"created_at", "updated_at"</code><p class="v"><button type="button" class="src" data-col="tasks.created_at">tasks.created_at</button>, <button type="button" class="src" data-col="tasks.updated_at">tasks.updated_at</button></p></div>
       </div>
@@ -319,8 +323,8 @@ button:focus-visible, .src:focus-visible { outline: 2px solid var(--accent); out
           <dt><code>queue</code></dt>
           <dd>Task changes not sent yet, keyed by <code>seq</code> (auto-increment, so they go out in the order they were made): <code>{ seq, method, path, body, queuedAt }</code>.
             <ul class="calls">
-              <li><code>POST /api/tasks</code> with <code>{ id, list_id, title }</code></li>
-              <li><code>PATCH /api/tasks/{id}</code> with <code>{ title?, status? }</code> (pages from before statuses sent <code>{ title?, done? }</code>, still accepted)</li>
+              <li><code>POST /api/tasks</code> with <code>{ id, list_id, title, due_date?, due_time?, due_zone? }</code></li>
+              <li><code>PATCH /api/tasks/{id}</code> with <code>{ title?, status?, due_date?, due_time?, due_zone? }</code>, where <code>due_date</code> replaces the due date with its time and <code>due_date: null</code> removes it (pages from before statuses sent <code>{ title?, done? }</code>, still accepted)</li>
               <li><code>DELETE /api/tasks/{id}</code></li>
             </ul>
           </dd>
@@ -344,6 +348,8 @@ button:focus-visible, .src:focus-visible { outline: 2px solid var(--accent); out
     <li><strong>An unowned list gets claimed</strong><span>Only the old "Taskly" list can be unowned, if it was migrated before any account existed. The next <code>add-user</code> takes it (<code>lists.claim_unowned</code>).</span></li>
     <li><strong>Who makes the ids</strong><span>The server makes list ids; the phone makes task ids, so a task can be created offline. The same task sent again to the same list is a retry: 200 and the stored task, unchanged.</span></li>
     <li><strong>Finishing records who</strong><span>Moving a task to <code>done</code> sets <code>done_by</code> to whoever did it; any other status clears it. <code>done: false</code> from an older page reopens only a done task, so it can't undo "in progress". Every task change bumps the task's <code>updated_at</code>.</span></li>
+    <li><strong>A due date is a day</strong><span>The API takes only <code>2026-10-17</code> for <code>due_date</code> (422 otherwise), and <code>null</code> in a <code>PATCH</code> removes it. The server never asks what day it is: today, tomorrow and overdue are the phone's call, by its own clock.</span></li>
+    <li><strong>A time is a moment</strong><span>A time is a 24-hour <code>15:00</code> in the IANA zone of whoever set it, checked with Python's <code>zoneinfo</code>: one moment, shown by each phone in its own time, with the time where it was set when that reads differently ("That's 3:00 PM New York time"). Time and zone come together, only with their date, and a new <code>due_date</code> without a time drops the old one; SQLite checks the pairing too.</span></li>
     <li><strong>Lengths</strong><span>Usernames are 2–32 letters, digits, <code>.</code>, <code>_</code> or <code>-</code>. List names are 1–100 characters and titles 1–500, trimmed. Passwords need at least 6.</span></li>
     <li><strong>Sessions expire</strong><span>90 days after <code>last_used_at</code>, which is written at most once an hour. Expired rows are deleted at the next login, or when their cookie comes back.</span></li>
     <li><strong>Agents connect as a person</strong><span>An AI agent (Claude, Gemini) signs in through <code>/oauth/authorize</code> and gets a grant: a code is swapped once for an access token (1 hour) and a refresh token (90 days, replaced on every use). Codes and tokens are stored as SHA-256, like sessions. A password change, <code>reset-password</code>, <code>disable-user</code> and <code>revoke-sessions</code> delete the person's grants.</span></li>
@@ -367,14 +373,14 @@ button:focus-visible, .src:focus-visible { outline: 2px solid var(--accent); out
   <textarea id="svg-out" readonly hidden aria-label="The diagram as SVG"></textarea>
 </section>
 
-<footer class="foot">Drawn from <code>taskly/db.py</code> at schema 5, October 2026.</footer>
+<footer class="foot">Drawn from <code>taskly/db.py</code> at schema 7, October 2026.</footer>
 </main>
 
 <script id="model">
 // The schema as data. The page and docs/data-model.svg are both drawn from it.
 // since/until: the schema versions (PRAGMA user_version) a table, column or reference exists in.
 const MODEL = {
-  version: 5,
+  version: 7,
   // From schema 4 the OAuth tables need a band below the others.
   canvas: { width: 1160, height: 700, tall: { since: 4, height: 1210 } },
   versions: {
@@ -382,7 +388,9 @@ const MODEL = {
     2: { text: "Accounts (phase 1b) add `users` and `sessions`. `todos` gains `created_by` and `done_by`, empty for todos made before." },
     3: { text: "Named lists (phase 2) add `lists`, `list_members` and `tasks`. Existing todos became tasks in a list named \"Taskly\", owned by the oldest active account with every active account as a member, and `todos` was dropped." },
     4: { text: "AI agents (MCP connectors) add `oauth_clients`, `oauth_codes`, `oauth_grants` and `oauth_tokens`: an agent signs in as a person and works with that person's lists through `/mcp`." },
-    5: { text: "Tasks move through new, in progress and done (the page's board), the current schema: `tasks.status` replaces `tasks.done`. Done tasks became `done`, the rest `new`; `done_by` was kept." },
+    5: { text: "Tasks move through new, in progress and done (the page's board): `tasks.status` replaces `tasks.done`. Done tasks became `done`, the rest `new`; `done_by` was kept." },
+    6: { text: "Tasks can have a due date: `tasks.due_date`, a calendar day or NULL. Existing tasks have none." },
+    7: { text: "A due date can have a time (an appointment), the current schema: `tasks.due_time` in `tasks.due_zone`, the time zone it was set in, so it is the same moment for everyone." },
   },
   tables: [
     {
@@ -465,9 +473,12 @@ const MODEL = {
         { name: "done", until: 4, sql: "INTEGER NOT NULL DEFAULT 0", note: "0 or 1; the API sent false or true. Migration 5 replaced it with `status`." },
         { name: "created_by", sql: "INTEGER REFERENCES users(id)", note: "Who added it. NULL for tasks from before accounts." },
         { name: "done_by", sql: "INTEGER REFERENCES users(id)", note: "Who finished it. Set when the task becomes done, back to NULL when it leaves done." },
-        { name: "created_at", sql: "TEXT NOT NULL DEFAULT now", note: "Lists show tasks not done first, then the oldest (schema 3–4: the newest)." },
+        { name: "created_at", sql: "TEXT NOT NULL DEFAULT now", note: "Lists show tasks not done first, then the ones with a due date, soonest first (from schema 6), then the oldest (schema 3–4: the newest)." },
         { name: "updated_at", sql: "TEXT NOT NULL DEFAULT now", note: "Bumped on every change." },
         { name: "status", since: 5, sql: "TEXT NOT NULL DEFAULT 'new' CHECK (status IN ('new', 'progress', 'done'))", note: "New, in progress or done; the board's three columns. The API also sends `done` (true when `done`). Last because `ALTER TABLE` appends it." },
+        { name: "due_date", since: 6, sql: "TEXT CHECK (due_date IS NULL OR date(due_date) IS due_date)", note: "A calendar day, `2026-10-17`, with no time or zone: the page compares it with the device's own date (today, tomorrow, overdue). NULL: no due date. The check refuses anything `date()` would rewrite, like `2026-02-30`." },
+        { name: "due_time", since: 7, sql: "TEXT CHECK (due_time IS NULL OR (due_date IS NOT NULL AND due_time GLOB '[01][0-9]:[0-5][0-9]' OR …))", note: "A 24-hour clock time, `15:00`, in `due_zone`; NULL: no time. Needs a `due_date` (the day in `due_zone`)." },
+        { name: "due_zone", since: 7, sql: "TEXT CHECK ((due_zone IS NULL) = (due_time IS NULL))", note: "The IANA time zone of whoever set the time, like `America/New_York`: with `due_date` and `due_time` it names one moment, which each page shows in its own time. Set exactly when `due_time` is." },
       ],
       indexes: [{ name: "tasks_list_id", on: "list_id" }],
       rules: [
@@ -697,7 +708,8 @@ function columnFlags(c) {
     pk: Boolean(c.pk) || c.sql.includes("PRIMARY KEY"),
     fk: c.sql.includes("REFERENCES"),
     unique: c.sql.includes("UNIQUE"),
-    nullable: !c.pk && !c.sql.includes("NOT NULL") && !c.sql.includes("PRIMARY KEY"),
+    // A CHECK can say NOT NULL of another column (tasks.due_time's does), so only the rest counts.
+    nullable: !c.pk && !c.sql.replace(/CHECK \(.*\)/, "").includes("NOT NULL") && !c.sql.includes("PRIMARY KEY"),
   };
 }
 
