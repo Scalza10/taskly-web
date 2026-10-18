@@ -66,7 +66,7 @@ each test gets its own database, so your local data is untouched) and
 | `POST /api/logout` | | 204; ends this device's session and tells the browser to clear the site's saved data (`Clear-Site-Data: "storage"`) |
 | `GET /api/me` | | `{"username"}` |
 | `POST /api/me/password` | `{"current", "new"}` | 204; logs out your other devices. 403 if `current` is wrong, 422 if `new` is under 6 characters |
-| `GET /api/sync` | | Everything you can see: `{"me", "lists": [{"id", "name", "owner", "role", "members", "tasks": [...]}]}`, lists by name, tasks not done first (in progress too), then oldest first |
+| `GET /api/sync` | | Everything you can see: `{"me", "lists": [{"id", "name", "owner", "role", "members", "tasks": [...]}]}`, lists by name, tasks not done first (in progress too), then the ones with a due date, soonest first (a date alone counts as the end of that day, in UTC; the page sorts by its own time zone), then oldest first |
 | `POST /api/lists` | `{"name": "Groceries"}` | 201 and the list; you own it |
 | `PATCH /api/lists/{id}` | `{"name": ...}` | The list. Owner only |
 | `DELETE /api/lists/{id}` | | 204; its tasks go too. Owner only |
@@ -191,7 +191,7 @@ and the page shows the changes on its next sync.
 | Tool | Does |
 |---|---|
 | `list_lists` | Your lists: name, owner, members, and how many tasks are open (in progress included), in progress, and done |
-| `list_tasks` | The open tasks of one list (by name or id) or of every list, oldest first, each with its `status`, `due_date` and any `due_time` (in `due_zone`); `include_done` adds the finished ones |
+| `list_tasks` | The open tasks of one list (by name or id) or of every list, soonest due first, then the rest oldest first, each with its `status`, `due_date` and any `due_time` (in `due_zone`); `include_done` adds the finished ones |
 | `create_list` | Makes a list you own |
 | `add_tasks` | Adds one or more tasks (up to 50) to a list, by name or id |
 | `complete_task` | Closes a task; `done: false` opens it again |

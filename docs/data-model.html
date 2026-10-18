@@ -296,7 +296,7 @@ button:focus-visible, .src:focus-visible { outline: 2px solid var(--accent); out
         <div class="row" style="--d:1"><code class="k">"owner"</code><p class="v"><button type="button" class="src" data-col="lists.owner_id">lists.owner_id</button> as a username; null if unowned</p></div>
         <div class="row" style="--d:1"><code class="k">"role"</code><p class="v">"owner" if <button type="button" class="src" data-col="lists.owner_id">lists.owner_id</button> is you, else "member"</p></div>
         <div class="row" style="--d:1"><code class="k">"members"</code><p class="v"><button type="button" class="src" data-col="list_members.user_id">list_members.user_id</button> as usernames, active accounts only</p></div>
-        <div class="row" style="--d:1"><code class="k">"tasks": [ … ]</code><p class="v">not done first (in progress too), then oldest first</p></div>
+        <div class="row" style="--d:1"><code class="k">"tasks": [ … ]</code><p class="v">not done first (in progress too), then the ones with a due date, soonest first, then oldest first</p></div>
         <div class="row" style="--d:2"><code class="k">"id", "list_id", "title"</code><p class="v"><button type="button" class="src" data-col="tasks.id">tasks.id</button>, <button type="button" class="src" data-col="tasks.list_id">tasks.list_id</button>, <button type="button" class="src" data-col="tasks.title">tasks.title</button></p></div>
         <div class="row" style="--d:2"><code class="k">"status"</code><p class="v"><button type="button" class="src" data-col="tasks.status">tasks.status</button>: "new", "progress" or "done"</p></div>
         <div class="row" style="--d:2"><code class="k">"done"</code><p class="v">true when <button type="button" class="src" data-col="tasks.status">tasks.status</button> is "done", for pages and agents from before statuses</p></div>
@@ -473,7 +473,7 @@ const MODEL = {
         { name: "done", until: 4, sql: "INTEGER NOT NULL DEFAULT 0", note: "0 or 1; the API sent false or true. Migration 5 replaced it with `status`." },
         { name: "created_by", sql: "INTEGER REFERENCES users(id)", note: "Who added it. NULL for tasks from before accounts." },
         { name: "done_by", sql: "INTEGER REFERENCES users(id)", note: "Who finished it. Set when the task becomes done, back to NULL when it leaves done." },
-        { name: "created_at", sql: "TEXT NOT NULL DEFAULT now", note: "Lists show tasks not done first, then the oldest (schema 3–4: the newest)." },
+        { name: "created_at", sql: "TEXT NOT NULL DEFAULT now", note: "Lists show tasks not done first, then the ones with a due date, soonest first (from schema 6), then the oldest (schema 3–4: the newest)." },
         { name: "updated_at", sql: "TEXT NOT NULL DEFAULT now", note: "Bumped on every change." },
         { name: "status", since: 5, sql: "TEXT NOT NULL DEFAULT 'new' CHECK (status IN ('new', 'progress', 'done'))", note: "New, in progress or done; the board's three columns. The API also sends `done` (true when `done`). Last because `ALTER TABLE` appends it." },
         { name: "due_date", since: 6, sql: "TEXT CHECK (due_date IS NULL OR date(due_date) IS due_date)", note: "A calendar day, `2026-10-17`, with no time or zone: the page compares it with the device's own date (today, tomorrow, overdue). NULL: no due date. The check refuses anything `date()` would rewrite, like `2026-02-30`." },
