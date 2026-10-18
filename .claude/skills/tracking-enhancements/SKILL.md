@@ -23,9 +23,10 @@ Taskly; don't retry until they have.
 
 ## Conventions
 
-- **Title:** `[Tag] Short name: details`. Tags: `[Small]` (a short session), `[Medium]`,
-  `[Google]` (Gmail, Calendar, Google Tasks). Tasks have no notes yet, so details go in the title
-  (500 characters at most).
+- **Title:** `[Tag] Short name`. Tags: `[Small]` (a short session), `[Medium]`,
+  `[Google]` (Gmail, Calendar, Google Tasks). Details (what it covers, what it depends on, links)
+  go in the task's **notes**, up to 2000 characters. Items from before notes still carry their
+  details in the title; leave them unless the user asks to tidy them.
 - **Status:** `new` = not started; `progress` = work has begun (design talk, a plan, or code);
   `done` = committed and pushed to `main`. Deploying is the user's step. Say "deploy pending" only
   for an item pushed in this conversation that the user hasn't said they deployed; otherwise say
@@ -39,13 +40,13 @@ Taskly; don't retry until they have.
 
 | User says / situation | Do |
 |---|---|
-| "What's next?" / "Where are we?" | `list_tasks(list=<the id>, include_done=true)`; show In progress, then New by tag, then a count of Done; leave out empty sections |
+| "What's next?" / "Where are we?" | `list_tasks(list=<the id>, include_done=true)`; show In progress, then New by tag (with a short line from the notes where it helps), then a count of Done; leave out empty sections |
 | Starting work on an item | `set_task_status(task_id, "progress")` before the work starts |
 | The item's commit is pushed to `main` | `set_task_status(task_id, "done")`, then tell the user |
 | Work stopped or was started too soon | `set_task_status(task_id, "new")` |
-| New idea | `add_tasks(list=<the id>, titles=["[Tag] Name: details"])` |
+| New idea | `add_tasks(list=<the id>, tasks=[{"title": "[Tag] Name", "notes": "details"}])` |
 | A feature shipped that isn't on the list | Offer to add it and mark it done; don't add it unasked |
-| Rename an item | `update_task(task_id, title)` |
+| Rename an item, or change its details | `update_task(task_id, title=..., notes=...)`; leave out what stays (`notes=""` removes them) |
 | Delete an item | Ask the user first, then `delete_task(task_id)` (no undo) |
 | Merge two items | `update_task` the one that stays, then (after asking) `delete_task` the other |
 
@@ -56,7 +57,5 @@ Task ids come from `list_tasks`; match the user's words to a title, and ask if t
 - Marking an item done when the code is written but not pushed, or leaving it in progress after
   the push.
 - Adding a duplicate: read the list first and check for a matching title.
-- Shipping part of an item: leave it in progress and say what's left, or ask the user whether to
-  split it into a new task for the rest.
-- When `[Small] Notes on a task` ships, update this skill: details move to notes (and
-  `update_task` may then take them).
+- Shipping part of an item: leave it in progress and say what's left (a line in its notes keeps
+  it), or ask the user whether to split it into a new task for the rest.
