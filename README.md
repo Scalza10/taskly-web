@@ -192,15 +192,19 @@ and the page shows the changes on its next sync.
 | Tool | Does |
 |---|---|
 | `list_lists` | Your lists: name, owner, members, and how many tasks are open (in progress included), in progress, and done |
-| `list_tasks` | The open tasks of one list (by name or id) or of every list, soonest due first, then the rest oldest first, each with its `status`, `due_date` and any `due_time` (in `due_zone`); `include_done` adds the finished ones |
+| `list_tasks` | The open tasks of one list (by name or id) or of every list, soonest due first, then the rest oldest first, each with its `status`, `notes`, `due_date` and any `due_time` (in `due_zone`); `include_done` adds the finished ones |
 | `create_list` | Makes a list you own |
-| `add_tasks` | Adds one or more tasks (up to 50) to a list, by name or id |
+| `rename_list` | Renames a list you own |
+| `delete_list` | Deletes a list you own, with its tasks, for everyone on it (no undo; Claude asks first) |
+| `add_tasks` | Adds tasks (up to 50) to a list, by name or id: `titles` for plain ones, `tasks` for ones with `notes` or a `due_date` (and `due_time` with its `due_zone`) |
 | `complete_task` | Closes a task; `done: false` opens it again |
 | `set_task_status` | Moves a task to `new`, `progress` (in progress) or `done`, like the page's board |
-| `update_task` | Renames a task |
+| `update_task` | Changes a task's `title`, `notes` or `due_date` (with `due_time` and `due_zone`); what's left out (or `null`) stays, and `""` removes the notes or the due date |
 | `delete_task` | Deletes a task for everyone on its list (no undo; Claude asks first) |
+| `clear_done` | Deletes a list's finished tasks for everyone on it, like the page's "Clear done" (no undo; Claude asks first) |
 
-It can't delete or rename lists, or change members; use the page for that.
+A time needs its time zone (`America/New_York`): Claude asks you for yours if it doesn't
+know it. It can't change members; use the page for that.
 
 **Connecting Claude (web, desktop and phone apps).** Your plan must allow custom connectors
 (Pro and Max do). Add it on the web or in the desktop app; the phone app then has it too.
