@@ -113,7 +113,8 @@ def build(settings: Settings) -> MCPServer:
         list: Annotated[str | None, Field(description="A list's name or id. Leave out for every list.")] = None,
         include_done: Annotated[bool, Field(description="Also return finished tasks.")] = False,
     ) -> dict:
-        """The open tasks (new or in progress) of one list, or of every list, oldest first.
+        """The open tasks (new or in progress) of one list, or of every list: soonest due first, then
+        the ones without a due date, oldest first.
         include_done adds the finished ones after them."""
         user = _user.get()
         with connection() as conn:

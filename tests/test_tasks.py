@@ -118,6 +118,33 @@ def test_tasks_sort_open_first_then_oldest(conn, maria, groceries):
     assert [t["title"] for t in tasks.list_tasks(conn, groceries)] == ["second", "third", "fourth", "first"]
 
 
+def test_tasks_with_a_due_date_come_first_soonest_first(conn, maria, groceries):
+    def add(title, due_date=None, due_time=None, due_zone=None, status=None):
+        task, _ = tasks.create_task(conn, new_id(), groceries, title, maria["id"], due_date, due_time, due_zone)
+        if status:
+            tasks.update_task(conn, task["id"], maria["id"], status=status)
+    add("undated, oldest")
+    add("Oct 20", "2026-10-20")
+    add("Oct 18, 3 pm in Florida", "2026-10-18", "15:00", "America/New_York")  # 19:00 UTC
+    add("Oct 18, 6 pm in La Palma", "2026-10-18", "18:00", "Atlantic/Canary")  # 17:00 UTC: sooner
+    add("Oct 18, the day", "2026-10-18")  # the end of the day: after that day's times
+    add("Oct 17, done", "2026-10-17", status="done")
+    add("undated, newer")
+    add("Oct 19", "2026-10-19")
+    add("undated, done", status="done")
+    assert [t["title"] for t in tasks.list_tasks(conn, groceries)] == [
+        "Oct 18, 6 pm in La Palma", "Oct 18, 3 pm in Florida", "Oct 18, the day", "Oct 19", "Oct 20",
+        "undated, oldest", "undated, newer",
+        "Oct 17, done", "undated, done",
+    ]
+
+
+def test_the_latest_day_still_sorts(conn, maria, groceries):
+    tasks.create_task(conn, new_id(), groceries, "far", maria["id"], "9999-12-31")
+    tasks.create_task(conn, new_id(), groceries, "near", maria["id"], "0001-01-01", "00:00", "Asia/Tokyo")
+    assert [t["title"] for t in tasks.list_tasks(conn, groceries)] == ["near", "far"]
+
+
 def test_snapshot_has_only_my_lists_with_members_and_tasks(conn, maria, tom, groceries):
     lists.add_member(conn, groceries, tom["id"])
     lists.create_list(conn, "tom's own", tom["id"])

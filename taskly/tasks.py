@@ -4,6 +4,8 @@ Every function takes an open connection and returns plain dicts (status as 'new'
 or None, with due_time as '15:00' in due_zone, the time zone it was set in, or both None)."""
 
 import sqlite3
+from datetime import UTC, datetime
+from zoneinfo import ZoneInfo
 
 # update_task: leave this field as it is (None for due_date means "no due date").
 KEEP = object()
@@ -26,12 +28,22 @@ def get_task(conn: sqlite3.Connection, task_id: str) -> dict | None:
     return _to_dict(row) if row else None
 
 
+def _due_moment(task: dict) -> float:
+    """When a task with a due date is due, as a timestamp: a time is a moment in its zone; a date
+    alone counts as the end of that day, here in UTC (the server has no zone; each page uses its own)."""
+    year, month, day = map(int, task["due_date"].split("-"))
+    if task["due_time"]:
+        hour, minute = map(int, task["due_time"].split(":"))
+        return datetime(year, month, day, hour, minute, tzinfo=ZoneInfo(task["due_zone"])).timestamp()
+    return datetime(year, month, day, tzinfo=UTC).timestamp() + 86400  # + a day: 9999-12-31 can't be a datetime
+
+
 def list_tasks(conn: sqlite3.Connection, list_id: str) -> list[dict]:
-    # Not done first (in progress too), then oldest first; rowid breaks ties within the same second.
-    rows = conn.execute(
-        f"{SELECT} WHERE t.list_id = ? ORDER BY t.status = 'done', t.created_at, t.rowid", (list_id,)
-    )
-    return [_to_dict(row) for row in rows]
+    # Not done first (in progress too); then the ones with a due date, soonest first; then oldest
+    # first, rowid breaking ties within the same second (sorted keeps that order for equal keys).
+    rows = conn.execute(f"{SELECT} WHERE t.list_id = ? ORDER BY t.created_at, t.rowid", (list_id,))
+    found = [_to_dict(row) for row in rows]
+    return sorted(found, key=lambda t: (t["done"], t["due_date"] is None, _due_moment(t) if t["due_date"] else 0))
 
 
 def create_task(conn: sqlite3.Connection, task_id: str, list_id: str, title: str, user_id: int,

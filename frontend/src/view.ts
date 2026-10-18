@@ -1,6 +1,7 @@
 // What the screen shows: the last snapshot from the server with the unsent changes applied on
 // top, sorted as the server sorts. Pure: easy to test, and the same answer every time.
 import type { Snapshot, Status, Task, TaskList } from "./api";
+import { dueMoment } from "./due";
 import type { QueuedChange, TaskChange } from "./store";
 
 const TASKS = "/api/tasks";
@@ -80,12 +81,16 @@ export function clearDoneChanges(list: TaskList): TaskChange[] {
   return list.tasks.filter((task) => task.status === "done").map((task) => ({ method: "DELETE", path: `${TASKS}/${task.id}` }));
 }
 
-// As the server sorts: not done first, then oldest first. Ties keep their order (the server's).
+// As the server sorts: not done first; then the ones with a due date, soonest first; then oldest
+// first. Ties keep their order (the server's). A date alone counts as the end of that day: this
+// device's day here, UTC's on the server, which has no zone (they differ only around midnight).
 export function sortTasks(tasks: Task[]): Task[] {
   return tasks
-    .map((task, index) => ({ task, index }))
+    .map((task, index) => ({ task, index, due: dueMoment(task) }))
     .sort((a, b) =>
       Number(a.task.status === "done") - Number(b.task.status === "done") ||
+      Number(a.due === undefined) - Number(b.due === undefined) ||
+      (a.due ?? 0) - (b.due ?? 0) ||
       a.task.created_at.localeCompare(b.task.created_at) ||
       a.index - b.index)
     .map(({ task }) => task);

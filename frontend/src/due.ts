@@ -88,6 +88,14 @@ function dueHere(task: DueFields): { day: string; at?: Date } | undefined {
   return { day: localDay(at), at };
 }
 
+// When a task is due, for sorting: a time is its moment; a date alone counts as the end of that day,
+// here. undefined: no due date.
+export function dueMoment(task: Pick<Task, "due_date" | "due_time" | "due_zone">): number | undefined {
+  if (!task.due_date) return undefined;
+  if (task.due_time && task.due_zone) return instantOf(task.due_date, task.due_time, task.due_zone).getTime();
+  return toDate(addDays(task.due_date, 1)).getTime();
+}
+
 // What the picker starts with: the day, and the time in this device's time.
 export function dueInput(task: DueFields): DueInput | null {
   const due = dueHere(task);
