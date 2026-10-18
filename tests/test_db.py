@@ -222,6 +222,30 @@ def test_migration_7_adds_a_time_that_needs_a_date_and_a_zone(tmp_path, monkeypa
     assert rows(path, "SELECT due_time, due_zone FROM tasks WHERE id = 't1'") == [{"due_time": "15:00", "due_zone": "America/New_York"}]
 
 
+def test_migration_8_adds_empty_notes(tmp_path, monkeypatch):
+    path = str(tmp_path / "taskly.db")
+    migrate_to(path, 7, monkeypatch)
+    with sqlite3.connect(path) as conn:
+        conn.executescript("""
+            INSERT INTO users (username, password_hash) VALUES ('maria', 'x');
+            INSERT INTO lists (id, name, owner_id) VALUES ('l1', 'Food', 1);
+            INSERT INTO tasks (id, list_id, title, due_date) VALUES ('t1', 'l1', 'Milk', '2026-10-17');
+        """)
+
+    assert db.migrate(path) == len(db.MIGRATIONS)
+
+    assert rows(path, "SELECT id, due_date, notes FROM tasks") == [{"id": "t1", "due_date": "2026-10-17", "notes": None}]
+    with sqlite3.connect(path) as conn:
+        conn.execute("UPDATE tasks SET notes = 'The oat one\nhttps://example.com' WHERE id = 't1'")
+        try:
+            conn.execute("UPDATE tasks SET notes = '' WHERE id = 't1'")  # no note is NULL, never ''
+        except sqlite3.IntegrityError:
+            pass
+        else:
+            raise AssertionError("an empty note should be refused")
+    assert rows(path, "SELECT notes FROM tasks") == [{"notes": "The oat one\nhttps://example.com"}]
+
+
 def test_deleting_a_list_deletes_its_tasks_and_members(tmp_path):
     path = str(tmp_path / "taskly.db")
     db.migrate(path)

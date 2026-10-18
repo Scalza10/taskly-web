@@ -1,16 +1,17 @@
 """Queries on tasks. IDs are UUIDs made by the device, so creating is safe to retry.
 Every function takes an open connection and returns plain dicts (status as 'new', 'progress' or
 'done', plus done as a bool for older pages and agents; people by name; due_date as '2026-10-17'
-or None, with due_time as '15:00' in due_zone, the time zone it was set in, or both None)."""
+or None, with due_time as '15:00' in due_zone, the time zone it was set in, or both None; notes as
+text or None, never '')."""
 
 import sqlite3
 from datetime import UTC, datetime
 from zoneinfo import ZoneInfo
 
-# update_task: leave this field as it is (None for due_date means "no due date").
+# update_task: leave this field as it is (None for due_date means "no due date", for notes "no notes").
 KEEP = object()
 
-SELECT = """SELECT t.id, t.list_id, t.title, t.status, t.due_date, t.due_time, t.due_zone,
+SELECT = """SELECT t.id, t.list_id, t.title, t.status, t.due_date, t.due_time, t.due_zone, t.notes,
                    c.username AS created_by, d.username AS done_by, t.created_at, t.updated_at
             FROM tasks t
             LEFT JOIN users c ON c.id = t.created_by
@@ -48,14 +49,15 @@ def list_tasks(conn: sqlite3.Connection, list_id: str) -> list[dict]:
 
 def create_task(conn: sqlite3.Connection, task_id: str, list_id: str, title: str, user_id: int,
                 due_date: str | None = None, due_time: str | None = None,
-                due_zone: str | None = None) -> tuple[dict, bool]:
-    """(task, created). If the id exists already (a device retrying), the stored task, unchanged."""
+                due_zone: str | None = None, notes: str | None = None) -> tuple[dict, bool]:
+    """(task, created). If the id exists already (a device retrying), the stored task, unchanged.
+    Empty notes are no notes."""
     try:
         with conn:
             conn.execute(
-                "INSERT INTO tasks (id, list_id, title, created_by, due_date, due_time, due_zone)"
-                " VALUES (?, ?, ?, ?, ?, ?, ?)",
-                (task_id, list_id, title, user_id, due_date, due_time, due_zone),
+                "INSERT INTO tasks (id, list_id, title, created_by, due_date, due_time, due_zone, notes)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                (task_id, list_id, title, user_id, due_date, due_time, due_zone, notes or None),
             )
     except sqlite3.IntegrityError:
         existing = get_task(conn, task_id)
@@ -67,10 +69,11 @@ def create_task(conn: sqlite3.Connection, task_id: str, list_id: str, title: str
 
 def update_task(conn: sqlite3.Connection, task_id: str, user_id: int, *, title: str | None = None,
                 done: bool | None = None, status: str | None = None, due_date=KEEP,
-                due_time: str | None = None, due_zone: str | None = None) -> dict | None:
+                due_time: str | None = None, due_zone: str | None = None, notes=KEEP) -> dict | None:
     """Changes only the fields given. due_date replaces the due date as a whole, its due_time and
-    due_zone too (None: no time); due_date=None removes it. status wins over done;
-    done=False reopens only a done task (an older page unticking must not undo "in progress").
+    due_zone too (None: no time); due_date=None removes it. notes=None or '' removes the notes.
+    status wins over done; done=False reopens only a done task (an older page unticking must not
+    undo "in progress").
     Finishing records who did it; any other status clears that. None if there is no such task."""
     assignments, values = [], []
     if title is not None:
@@ -79,6 +82,9 @@ def update_task(conn: sqlite3.Connection, task_id: str, user_id: int, *, title: 
     if due_date is not KEEP:
         assignments += ["due_date = ?", "due_time = ?", "due_zone = ?"]
         values += [due_date, due_time, due_zone]
+    if notes is not KEEP:
+        assignments.append("notes = ?")
+        values.append(notes or None)
     if status is None and done is not None:
         status = "done" if done else None
         if not done:
@@ -102,3 +108,12 @@ def delete_task(conn: sqlite3.Connection, task_id: str) -> bool:
     with conn:
         cursor = conn.execute("DELETE FROM tasks WHERE id = ?", (task_id,))
     return cursor.rowcount > 0
+
+
+def delete_done(conn: sqlite3.Connection, list_id: str) -> list[dict]:
+    """Deletes the list's finished tasks ("Clear done") and returns them as they were."""
+    found = [task for task in list_tasks(conn, list_id) if task["done"]]
+    with conn:
+        # Still done: one reopened meanwhile stays.
+        conn.executemany("DELETE FROM tasks WHERE id = ? AND status = 'done'", [(task["id"],) for task in found])
+    return found

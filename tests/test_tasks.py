@@ -78,6 +78,37 @@ def test_a_due_time_goes_with_its_date(conn, maria, groceries):
     assert (cleared["due_date"], cleared["due_time"], cleared["due_zone"]) == (None, None, None)
 
 
+def test_notes_are_set_kept_and_removed(conn, maria, groceries):
+    task, _ = tasks.create_task(conn, new_id(), groceries, "Milk", maria["id"], notes="The oat one\nhttps://example.com")
+    assert task["notes"] == "The oat one\nhttps://example.com"
+    # Other changes leave them alone.
+    kept = tasks.update_task(conn, task["id"], maria["id"], title="Oat milk", status="progress", due_date="2026-10-20")
+    assert kept["notes"] == "The oat one\nhttps://example.com"
+    assert tasks.update_task(conn, task["id"], maria["id"], notes="Two cartons")["notes"] == "Two cartons"
+    assert tasks.update_task(conn, task["id"], maria["id"], notes="")["notes"] is None
+    tasks.update_task(conn, task["id"], maria["id"], notes="again")
+    cleared = tasks.update_task(conn, task["id"], maria["id"], notes=None)
+    assert (cleared["notes"], cleared["title"], cleared["due_date"]) == (None, "Oat milk", "2026-10-20")
+    assert tasks.create_task(conn, new_id(), groceries, "Eggs", maria["id"], notes="")[0]["notes"] is None
+    assert tasks.create_task(conn, new_id(), groceries, "Bread", maria["id"])[0]["notes"] is None
+
+
+def test_delete_done_deletes_only_that_lists_finished_tasks(conn, maria, groceries):
+    other = lists.create_list(conn, "Chores", maria["id"])
+    ids = {}
+    for list_id, title in [(groceries, "Milk"), (groceries, "Eggs"), (groceries, "Bread"), (other, "Sweep")]:
+        ids[title] = tasks.create_task(conn, new_id(), list_id, title, maria["id"])[0]["id"]
+    for title in ["Milk", "Eggs", "Sweep"]:
+        tasks.update_task(conn, ids[title], maria["id"], status="done")
+
+    deleted = tasks.delete_done(conn, groceries)
+    assert sorted(t["title"] for t in deleted) == ["Eggs", "Milk"]
+    assert all(t["done"] and t["done_by"] == "maria" for t in deleted)
+    assert [t["title"] for t in tasks.list_tasks(conn, groceries)] == ["Bread"]
+    assert [t["title"] for t in tasks.list_tasks(conn, other)] == ["Sweep"]
+    assert tasks.delete_done(conn, groceries) == []
+
+
 def test_delete(conn, maria, groceries):
     task, _ = tasks.create_task(conn, new_id(), groceries, "Milk", maria["id"])
     assert tasks.delete_task(conn, task["id"]) is True

@@ -148,6 +148,11 @@ MIGRATIONS = [
         AND (due_time GLOB '[01][0-9]:[0-5][0-9]' OR due_time GLOB '2[0-3]:[0-5][0-9]')));
     ALTER TABLE tasks ADD COLUMN due_zone TEXT CHECK ((due_zone IS NULL) = (due_time IS NULL));
     """,
+    # 8: optional notes per task: plain text, links and details, line breaks kept. No note is NULL,
+    # never '', so any text there is a note.
+    """
+    ALTER TABLE tasks ADD COLUMN notes TEXT CHECK (notes IS NULL OR notes <> '');
+    """,
 ]
 
 

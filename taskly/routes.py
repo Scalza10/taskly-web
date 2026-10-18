@@ -39,6 +39,19 @@ DueDate = Annotated[str, StringConstraints(pattern=r"^[0-9]{4}-[0-9]{2}-[0-9]{2}
 DueTime = Annotated[str, StringConstraints(pattern=r"^([01][0-9]|2[0-3]):[0-5][0-9]$")]
 DueZone = Annotated[str, StringConstraints(max_length=64, pattern=r"^[A-Za-z][A-Za-z0-9_+\-]*(/[A-Za-z0-9_+\-]+)*$"),
                     AfterValidator(_time_zone)]
+# Plain text, line breaks kept. Empty after trimming is no notes (stored as NULL).
+Notes = Annotated[str, StringConstraints(strip_whitespace=True, max_length=2000)]
+
+
+def due_problem(sent: set[str], due_date: str | None, due_time: str | None, due_zone: str | None) -> str | None:
+    """What's wrong with a due date's parts (sent: the fields given), or None. Agents get the same rules."""
+    if (due_time is None) != (due_zone is None):
+        return "due_time and due_zone come together"
+    if {"due_time", "due_zone"} & sent and "due_date" not in sent:
+        return "send due_time and due_zone with their due_date"
+    if due_time is not None and due_date is None:
+        return "a due_time needs a due_date"
+    return None
 
 
 class Due(BaseModel):
@@ -49,12 +62,9 @@ class Due(BaseModel):
 
     @model_validator(mode="after")
     def _time_with_date(self) -> "Due":
-        if (self.due_time is None) != (self.due_zone is None):
-            raise ValueError("due_time and due_zone come together")
-        if {"due_time", "due_zone"} & self.model_fields_set and "due_date" not in self.model_fields_set:
-            raise ValueError("send due_time and due_zone with their due_date")
-        if self.due_time is not None and self.due_date is None:
-            raise ValueError("a due_time needs a due_date")
+        problem = due_problem(self.model_fields_set, self.due_date, self.due_time, self.due_zone)
+        if problem:
+            raise ValueError(problem)
         return self
 
 
@@ -70,10 +80,12 @@ class TaskCreate(Due):
     id: UUID
     list_id: UUID
     title: Title
+    notes: Notes | None = None
 
 
-class TaskUpdate(Due):  # due_date: null removes it (and its time); left out, it stays
+class TaskUpdate(Due):  # due_date or notes: null removes it (and the date's time); left out, it stays
     title: Title | None = None
+    notes: Notes | None = None  # "" removes them too
     done: bool | None = None  # what pages before the board send; status wins if both are given
     status: Literal["new", "progress", "done"] | None = None
 
@@ -163,7 +175,7 @@ def create_task(body: TaskCreate, response: Response, user: CurrentUser, conn: C
     require_role(conn, str(body.list_id), user)
     try:
         task, created = tasks.create_task(conn, str(body.id), str(body.list_id), body.title, user["id"],
-                                          body.due_date, body.due_time, body.due_zone)
+                                          body.due_date, body.due_time, body.due_zone, body.notes)
     except sqlite3.IntegrityError:  # the list was deleted since the role check
         raise HTTPException(status_code=404, detail="No such list") from None
     if task["list_id"] != str(body.list_id):
@@ -177,8 +189,9 @@ def create_task(body: TaskCreate, response: Response, user: CurrentUser, conn: C
 def update_task(task_id: UUID, body: TaskUpdate, user: CurrentUser, conn: Conn) -> dict:
     task_for(conn, task_id, user)
     due_date = body.due_date if "due_date" in body.model_fields_set else tasks.KEEP
+    notes = body.notes if "notes" in body.model_fields_set else tasks.KEEP
     task = tasks.update_task(conn, str(task_id), user["id"], title=body.title, done=body.done, status=body.status,
-                             due_date=due_date, due_time=body.due_time, due_zone=body.due_zone)
+                             due_date=due_date, due_time=body.due_time, due_zone=body.due_zone, notes=notes)
     if task is None:  # deleted since task_for
         raise HTTPException(status_code=404, detail="No such task")
     return task

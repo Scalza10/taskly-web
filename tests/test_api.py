@@ -159,6 +159,40 @@ def test_a_due_time_needs_its_date_and_zone(client):
     assert (stored["due_date"], stored["due_time"], stored["due_zone"]) == (None, None, None)
 
 
+def test_notes(client):
+    made = new_list(client)
+    body = {"id": str(uuid.uuid4()), "list_id": made["id"], "title": "Plumber", "notes": "  Call first\nhttps://example.com/leak  "}
+    response = client.post("/api/tasks", json=body)
+    assert response.status_code == 201
+    task = response.json()
+    assert task["notes"] == "Call first\nhttps://example.com/leak"  # trimmed, the line break kept
+    path = f"/api/tasks/{task['id']}"
+    # A page from before notes leaves them alone, whatever it changes.
+    for change in [{"status": "progress"}, {"done": True}, {"done": False}, {"title": "Plumber (sink)"},
+                   {"due_date": "2026-10-20"}, {"due_date": None}]:
+        assert client.patch(path, json=change).json()["notes"] == "Call first\nhttps://example.com/leak", change
+    assert client.patch(path, json={"notes": "Ask for Sam"}).json()["notes"] == "Ask for Sam"
+    assert client.patch(path, json={"notes": "   "}).json()["notes"] is None
+    client.patch(path, json={"notes": "again"})
+    assert client.patch(path, json={"notes": None}).json()["notes"] is None
+    client.patch(path, json={"notes": "in the sync"})
+    assert sync(client)["lists"][0]["tasks"][0]["notes"] == "in the sync"
+    assert new_task(client, made["id"], "Eggs")["notes"] is None
+
+
+def test_notes_are_checked(client):
+    made = new_list(client)
+    task = new_task(client, made["id"])
+    path = f"/api/tasks/{task['id']}"
+    for wrong in ["x" * 2001, 7, ["a"]]:
+        assert client.patch(path, json={"notes": wrong}).status_code == 422, wrong
+        created = client.post("/api/tasks", json={"id": str(uuid.uuid4()), "list_id": made["id"], "title": "x", "notes": wrong})
+        assert created.status_code == 422, wrong
+    assert client.patch(path, json={"notes": "x" * 2000}).status_code == 200
+    lone = client.patch(path, content='{"notes": "\\ud800"}', headers={"Content-Type": "application/json"})
+    assert lone.status_code == 422
+
+
 def test_a_retried_create_changes_nothing(client):
     made = new_list(client)
     task = new_task(client, made["id"], "Milk")
