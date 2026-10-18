@@ -1,4 +1,5 @@
 import json
+import uuid
 
 import pytest
 from fastapi.testclient import TestClient
@@ -41,6 +42,13 @@ def test_initialize_and_the_tools(client, token):
     assert tools["add_tasks"]["annotations"]["destructiveHint"] is False
     assert tools["update_task"]["annotations"]["destructiveHint"] is False
     assert tools["delete_task"]["annotations"]["destructiveHint"] is True
+    # Agents from before notes and due dates still send just these.
+    assert tools["add_tasks"]["inputSchema"]["required"] == ["list"]
+    assert tools["update_task"]["inputSchema"]["required"] == ["task_id"]
+    # Each new task's fields are spelled out in place: some clients don't follow $ref.
+    assert "$ref" not in json.dumps(tools["add_tasks"]["inputSchema"])
+    item = tools["add_tasks"]["inputSchema"]["properties"]["tasks"]["anyOf"][0]["items"]
+    assert {"title", "notes", "due_date", "due_time", "due_zone"} <= set(item["properties"]) and item["required"] == ["title"]
 
 
 def test_no_token_points_at_the_sign_in(anon):
@@ -128,6 +136,82 @@ def test_agents_see_due_dates(client, token):
     [one] = call(client, token, "list_tasks", list=groceries["id"])["lists"]
     seen = {t["title"]: (t["due_date"], t["due_time"], t["due_zone"]) for t in one["tasks"]}
     assert seen == {"Milk": ("2026-10-17", "15:00", "America/New_York"), "Eggs": (None, None, None)}
+
+
+def test_agents_see_notes(client, token):
+    groceries = new_list(client)
+    client.post("/api/tasks", json={"id": str(uuid.uuid4()), "list_id": groceries["id"], "title": "Milk", "notes": "The oat one"})
+    new_task(client, groceries["id"], "Eggs")
+    [one] = call(client, token, "list_tasks", list=groceries["id"])["lists"]
+    assert {t["title"]: t["notes"] for t in one["tasks"]} == {"Milk": "The oat one", "Eggs": None}
+
+
+def test_add_tasks_with_notes_and_due_dates(client, token):
+    groceries = new_list(client, "Groceries")
+    added = call(client, token, "add_tasks", list="Groceries", titles=["Bread"], tasks=[
+        {"title": " Plumber ", "notes": "  Call first\nhttps://example.com  ", "due_date": "2026-10-20"},
+        {"title": "Dentist", "due_date": "2026-10-21", "due_time": "15:00", "due_zone": "America/New_York"},
+        {"title": "Eggs", "notes": "   "},
+    ])["added"]
+    # Titles first, then tasks, in order.
+    assert [t["title"] for t in added] == ["Bread", "Plumber", "Dentist", "Eggs"]
+    assert {t["title"]: t["notes"] for t in added} == {"Bread": None, "Plumber": "Call first\nhttps://example.com",
+                                                       "Dentist": None, "Eggs": None}
+    assert [(t["due_date"], t["due_time"], t["due_zone"]) for t in added] == [
+        (None, None, None), ("2026-10-20", None, None), ("2026-10-21", "15:00", "America/New_York"), (None, None, None)]
+    # The page sees them on its next sync.
+    seen = {t["title"]: (t["notes"], t["due_date"]) for t in client.get("/api/sync").json()["lists"][0]["tasks"]}
+    assert seen["Plumber"] == ("Call first\nhttps://example.com", "2026-10-20")
+    assert call(client, token, "add_tasks", list=groceries["id"], tasks=[{"title": "Only tasks"}])["added"][0]["title"] == "Only tasks"
+
+
+def test_add_tasks_errors_add_nothing(client, token):
+    new_list(client, "Groceries")
+    errors = [
+        call(client, token, "add_tasks", list="Groceries"),
+        call(client, token, "add_tasks", list="Groceries", titles=[], tasks=[]),
+        call(client, token, "add_tasks", list="Groceries", titles=["x"] * 30, tasks=[{"title": "y"}] * 21),
+        call(client, token, "add_tasks", list="Groceries", tasks=[{"title": "Dentist", "due_date": "2026-10-21", "due_time": "15:00"}]),
+        call(client, token, "add_tasks", list="Groceries", titles=["Milk"], tasks=[{"title": "Rent", "due_date": "2026-02-30"}]),
+        call(client, token, "add_tasks", list="Groceries", titles=["Milk"], tasks=[{"title": "Rent", "notes": "x" * 2001}]),
+        call(client, token, "add_tasks", list="Groceries", tasks=[{"notes": "no title"}]),
+    ]
+    assert "Give titles, or tasks" in errors[0] and "Give titles, or tasks" in errors[1]
+    assert "50" in errors[2]
+    assert "due_time and due_zone come together" in errors[3]
+    assert "due_date" in errors[4] and "notes" in errors[5] and "title" in errors[6]
+    assert client.get("/api/sync").json()["lists"][0]["tasks"] == []
+
+
+def test_update_task_notes_and_due_dates(client, token):
+    milk = new_task(client, new_list(client)["id"], "Milk")
+    update = lambda **arguments: call(client, token, "update_task", task_id=milk["id"], **arguments)
+
+    assert update(notes="  The oat one  ")["notes"] == "The oat one"
+    renamed = update(title="Oat milk")
+    assert (renamed["title"], renamed["notes"]) == ("Oat milk", "The oat one")  # left out: kept
+    assert update(title="Oat milk (2)", notes=None)["notes"] == "The oat one"  # null: kept too
+    assert update(notes="")["notes"] is None  # "": removed
+
+    dated = update(due_date="2026-10-20")
+    assert (dated["due_date"], dated["due_time"], dated["title"]) == ("2026-10-20", None, "Oat milk (2)")
+    timed = update(due_date="2026-10-21", due_time="09:30", due_zone="Atlantic/Canary")
+    assert (timed["due_date"], timed["due_time"], timed["due_zone"]) == ("2026-10-21", "09:30", "Atlantic/Canary")
+    assert update(notes="Two cartons")["due_time"] == "09:30"  # other changes leave it
+    cleared = update(due_date="")
+    assert (cleared["due_date"], cleared["due_time"], cleared["due_zone"], cleared["notes"]) == (None, None, None, "Two cartons")
+    assert client.get("/api/sync").json()["lists"][0]["tasks"][0]["notes"] == "Two cartons"
+
+    assert "Nothing to change" in update()
+    assert "Nothing to change" in update(title=None, notes=None)
+    assert "due_time and due_zone come together" in update(due_date="2026-10-21", due_time="09:30")
+    assert "with their due_date" in update(due_time="09:30", due_zone="Atlantic/Canary")
+    assert "a due_time needs a due_date" in update(due_date="", due_time="09:30", due_zone="Atlantic/Canary")
+    assert "due_date" in update(due_date="2026-02-30")
+    assert "due_date" in update(due_date="Friday")
+    assert "due_zone" in update(due_date="2026-10-21", due_time="09:30", due_zone="Mars/Olympus")
+    assert "notes" in update(notes="x" * 2001)
+    assert update(title="Oat milk (3)")["due_date"] is None
 
 
 def test_close_and_reopen_a_task(client, token):

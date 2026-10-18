@@ -5,7 +5,13 @@ isn't used: Guard checks the bearer token from oauth_routes and puts the user in
 and every tool works with the same queries and the same rights as the page. Tool errors come back
 as tool results (isError), never as HTTP errors.
 
-Agents keep a copy of these tool names and arguments: add optional arguments, don't rename or drop."""
+Agents keep a copy of these tool names and arguments: add optional arguments, don't rename or drop.
+
+The SDK hands a tool its defaults for arguments left out and can't tell them from an explicit null,
+and some clients send null for every optional argument. So for agents a missing or null argument
+leaves a field alone and "" clears it (update_task's notes and due_date), unlike the API, where a
+PATCH's null removes. Rules on arguments belong in their types: a pydantic ValidationError raised
+in a tool's body reaches the agent as "Error executing tool", without its text."""
 
 import contextvars
 import sqlite3
@@ -18,21 +24,46 @@ from mcp.server import MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
 from mcp.server.transport_security import TransportSecuritySettings
 from mcp.types import ToolAnnotations
-from pydantic import Field
+from pydantic import AfterValidator, Field, StringConstraints, WithJsonSchema
 from starlette.datastructures import MutableHeaders
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 
 from . import auth, db, lists, oauth, oauth_routes, snapshot, tasks
-from .routes import ListName, Title
+from .routes import Due, DueDate, DueTime, DueZone, ListName, Notes, Title, calendar_day, due_problem
 from .settings import Settings
 
 INSTRUCTIONS = """Taskly holds the user's to-do lists, some shared with other people.
 Call list_lists first to see the lists. Task ids come from list_tasks.
 To close (finish, tick off) a task, call complete_task; done=false opens it again.
 A task's status is new, progress (in progress, being worked on) or done; set_task_status moves it.
-update_task renames a task. delete_task removes one for everyone on its list, for good.
+A task can have notes (plain text: links, details) and a due date (YYYY-MM-DD), optionally with a
+time (HH:MM, 24-hour) in the IANA time zone it is in, like America/New_York: the user's own, so ask
+them if you don't know it. add_tasks sets them on new tasks (its tasks argument).
+update_task changes a task's title, notes or due date; leave out what stays, "" removes notes or the due date.
+delete_task removes one for everyone on its list, for good.
 Lists can be named by id or by name."""
+
+DUE_ZONE_HINT = ('due_zone is the IANA time zone the time is in, like "America/New_York": the user\'s own, so ask '
+                 "them if you don't know it. Or leave out the time and zone for the day alone.")
+
+# A due date, or "" for none (update_task): checked like the API's DueDate when it isn't empty.
+DueDateOrEmpty = Annotated[str, StringConstraints(pattern=r"^([0-9]{4}-[0-9]{2}-[0-9]{2})?$"),
+                           AfterValidator(lambda text: calendar_day(text) if text else text)]
+
+
+class NewTask(Due):
+    """A task to add, with more than a title."""
+    title: Annotated[Title, Field(description="The task's title.")]
+    notes: Annotated[Notes | None, Field(description="Notes: plain text, links, details.")] = None
+    due_date: Annotated[DueDate | None, Field(description="The day it's due, YYYY-MM-DD.")] = None
+    due_time: Annotated[DueTime | None, Field(description="A time that day, HH:MM (24-hour); needs due_zone.")] = None
+    due_zone: Annotated[DueZone | None, Field(
+        description='The IANA time zone of due_time, like "America/New_York" (the user\'s).')] = None
+
+
+# Spelled out in the tool's schema rather than as a $ref, which some clients don't follow.
+NewTaskItem = Annotated[NewTask, WithJsonSchema(NewTask.model_json_schema())]
 
 _user: contextvars.ContextVar[dict] = contextvars.ContextVar("taskly_mcp_user")
 
@@ -69,8 +100,15 @@ def find_list(conn: sqlite3.Connection, user_id: int, ref: str) -> str:
 
 def _task(task: dict) -> dict:
     """A task as the agent sees it: list_id is implied by where it is."""
-    return {key: task[key] for key in ("id", "title", "status", "done", "due_date", "due_time", "due_zone",
+    return {key: task[key] for key in ("id", "title", "notes", "status", "done", "due_date", "due_time", "due_zone",
                                        "created_by", "done_by", "created_at")}
+
+
+def _add(conn: sqlite3.Connection, list_id: str, user_id: int, title: str, notes: str | None = None,
+         due_date: str | None = None, due_time: str | None = None, due_zone: str | None = None) -> dict:
+    """A new task (out here: add_tasks' argument "tasks" hides the module)."""
+    task, _ = tasks.create_task(conn, str(uuid4()), list_id, title, user_id, due_date, due_time, due_zone, notes)
+    return task
 
 
 def _my_task(conn: sqlite3.Connection, user_id: int, task_id: str) -> dict:
@@ -137,16 +175,22 @@ def build(settings: Settings) -> MCPServer:
     @server.tool(annotations=WRITE)
     def add_tasks(
         list: Annotated[str, Field(description="The list's name or id.")],
-        titles: Annotated[list[Title], Field(min_length=1, max_length=50, description="One title per task.")],
+        titles: Annotated[list[Title] | None, Field(max_length=50, description="One title per task.")] = None,
+        tasks: Annotated[list[NewTaskItem] | None, Field(max_length=50, description=(
+            "Tasks with notes or a due date, each {title, notes?, due_date?, due_time?, due_zone?}; "
+            "added after the titles."))] = None,
     ) -> dict:
-        """Add tasks to a list, one per title. Returns the new tasks with their ids."""
+        """Add tasks to a list: titles for plain ones, tasks for ones with notes or a due date, up to 50
+        in all. Returns the new tasks with their ids."""
         user = _user.get()
+        items = [{"title": title} for title in titles or []] + [item.model_dump() for item in tasks or []]
+        if not items:
+            raise ToolError("Give titles, or tasks with notes or due dates.")
+        if len(items) > 50:
+            raise ToolError(f"At most 50 tasks at a time, not {len(items)}.")
         with connection() as conn:
             list_id = find_list(conn, user["id"], list)
-            added = []
-            for title in titles:
-                task, _ = tasks.create_task(conn, str(uuid4()), list_id, title, user["id"])
-                added.append(_task(task))
+            added = [_task(_add(conn, list_id, user["id"], **item)) for item in items]
             view = snapshot.list_view(conn, list_id, user["id"])
         return {"list": {"id": view["id"], "name": view["name"]}, "added": added}
 
@@ -179,13 +223,32 @@ def build(settings: Settings) -> MCPServer:
                                              openWorldHint=False))
     def update_task(
         task_id: Annotated[str, Field(description="The task's id, from list_tasks.")],
-        title: Annotated[Title, Field(description="The task's new title.")],
+        title: Annotated[Title | None, Field(description="The task's new title. Leave out to keep it.")] = None,
+        notes: Annotated[Notes | None, Field(description=(
+            'The task\'s notes (plain text: links, details), replacing what is there; "" removes them. '
+            "Leave out to keep them."))] = None,
+        due_date: Annotated[DueDateOrEmpty | None, Field(description=(
+            'The day it\'s due, YYYY-MM-DD, replacing the due date and its time; "" removes it. '
+            "Leave out to keep it."))] = None,
+        due_time: Annotated[DueTime | None, Field(description="With due_date: a time that day, HH:MM (24-hour); needs due_zone.")] = None,
+        due_zone: Annotated[DueZone | None, Field(
+            description='With due_time: the IANA time zone it is in, like "America/New_York" (the user\'s).')] = None,
     ) -> dict:
-        """Rename a task. Its status stays as it is."""
+        """Change a task's title, notes or due date; what's left out stays. Its status stays as it is."""
+        given = {"title": title, "notes": notes, "due_date": due_date, "due_time": due_time, "due_zone": due_zone}
+        sent = {name for name, value in given.items() if value is not None}
+        if not sent:
+            raise ToolError("Nothing to change: give title, notes or due_date.")
+        problem = due_problem(sent, due_date or None, due_time, due_zone)
+        if problem:
+            raise ToolError(f"{problem}. {DUE_ZONE_HINT}")
         user = _user.get()
         with connection() as conn:
             task = _my_task(conn, user["id"], task_id)
-            updated = tasks.update_task(conn, task["id"], user["id"], title=title)
+            updated = tasks.update_task(conn, task["id"], user["id"], title=title,
+                                        notes=tasks.KEEP if notes is None else notes,
+                                        due_date=tasks.KEEP if due_date is None else due_date or None,
+                                        due_time=due_time, due_zone=due_zone)
             if updated is None:  # deleted since _my_task
                 raise ToolError("No such task. Task ids come from list_tasks.")
             return _task(updated)

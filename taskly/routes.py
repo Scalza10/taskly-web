@@ -20,7 +20,7 @@ Title = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, ma
 ListName = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=100)]
 
 
-def _calendar_day(text: str) -> str:
+def calendar_day(text: str) -> str:
     date.fromisoformat(text)  # 2026-02-30 is a ValueError, so a 422
     return text
 
@@ -34,7 +34,7 @@ def _time_zone(name: str) -> str:
 
 
 # Only "2026-10-17": no times, timestamps or other forms. Stored as sent.
-DueDate = Annotated[str, StringConstraints(pattern=r"^[0-9]{4}-[0-9]{2}-[0-9]{2}$"), AfterValidator(_calendar_day)]
+DueDate = Annotated[str, StringConstraints(pattern=r"^[0-9]{4}-[0-9]{2}-[0-9]{2}$"), AfterValidator(calendar_day)]
 # A clock time, "15:00", in a due_zone: an IANA time zone name like "America/New_York".
 DueTime = Annotated[str, StringConstraints(pattern=r"^([01][0-9]|2[0-3]):[0-5][0-9]$")]
 DueZone = Annotated[str, StringConstraints(max_length=64, pattern=r"^[A-Za-z][A-Za-z0-9_+\-]*(/[A-Za-z0-9_+\-]+)*$"),
