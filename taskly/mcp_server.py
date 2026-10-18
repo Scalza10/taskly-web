@@ -41,7 +41,9 @@ A task can have notes (plain text: links, details) and a due date (YYYY-MM-DD), 
 time (HH:MM, 24-hour) in the IANA time zone it is in, like America/New_York: the user's own, so ask
 them if you don't know it. add_tasks sets them on new tasks (its tasks argument).
 update_task changes a task's title, notes or due date; leave out what stays, "" removes notes or the due date.
-delete_task removes one for everyone on its list, for good.
+delete_task removes one for everyone on its list, for good; clear_done removes a list's finished
+tasks, delete_list a whole list, also for everyone and for good. Only a list's owner renames
+(rename_list) or deletes it.
 Lists can be named by id or by name."""
 
 DUE_ZONE_HINT = ('due_zone is the IANA time zone the time is in, like "America/New_York": the user\'s own, so ask '
@@ -69,6 +71,8 @@ _user: contextvars.ContextVar[dict] = contextvars.ContextVar("taskly_mcp_user")
 
 READ = ToolAnnotations(readOnlyHint=True, openWorldHint=False)
 WRITE = ToolAnnotations(readOnlyHint=False, destructiveHint=False, openWorldHint=False)
+# Deletes for everyone, for good: clients ask the user first.
+DESTRUCTIVE = ToolAnnotations(readOnlyHint=False, destructiveHint=True, idempotentHint=False, openWorldHint=False)
 
 
 def _my_lists(conn: sqlite3.Connection, user_id: int) -> list[sqlite3.Row]:
@@ -96,6 +100,15 @@ def find_list(conn: sqlite3.Connection, user_id: int, ref: str) -> str:
         raise ToolError("You have no lists yet. create_list makes one.")
     names = ", ".join(f'"{row["name"]}"' for row in mine)
     raise ToolError(f'You have no list called "{ref}". Your lists: {names}')
+
+
+def _owned_list(conn: sqlite3.Connection, user_id: int, ref: str) -> str:
+    """The id of the user's list named by ref, if they own it; else a ToolError."""
+    list_id = find_list(conn, user_id, ref)
+    if lists.role(conn, list_id, user_id) != "owner":
+        owner = snapshot.list_view(conn, list_id, user_id)["owner"]
+        raise ToolError("Only the list's owner can do that" + (f" (it's {owner}'s)." if owner else "."))
+    return list_id
 
 
 def _task(task: dict) -> dict:
@@ -253,8 +266,7 @@ def build(settings: Settings) -> MCPServer:
                 raise ToolError("No such task. Task ids come from list_tasks.")
             return _task(updated)
 
-    @server.tool(annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=True, idempotentHint=False,
-                                             openWorldHint=False))
+    @server.tool(annotations=DESTRUCTIVE)
     def delete_task(task_id: Annotated[str, Field(description="The task's id, from list_tasks.")]) -> dict:
         """Delete a task for everyone on its list. There is no undo; to finish a task, use complete_task."""
         user = _user.get()
@@ -262,6 +274,43 @@ def build(settings: Settings) -> MCPServer:
             task = _my_task(conn, user["id"], task_id)
             tasks.delete_task(conn, task["id"])
             return {"deleted": _task(task)}
+
+    @server.tool(annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=False, idempotentHint=True,
+                                             openWorldHint=False))
+    def rename_list(
+        list: Annotated[str, Field(description="The list's name or id.")],
+        name: Annotated[ListName, Field(description="The list's new name.")],
+    ) -> dict:
+        """Rename a list. Only its owner can."""
+        user = _user.get()
+        with connection() as conn:
+            list_id = _owned_list(conn, user["id"], list)
+            if not lists.rename_list(conn, list_id, name):  # deleted since _owned_list
+                raise ToolError("No such list.")
+            return snapshot.list_view(conn, list_id, user["id"])
+
+    @server.tool(annotations=DESTRUCTIVE)
+    def clear_done(list: Annotated[str, Field(description="The list's name or id.")]) -> dict:
+        """Delete a list's finished tasks, for everyone on the list, like the page's "Clear done". There
+        is no undo. Returns the tasks deleted (none is fine)."""
+        user = _user.get()
+        with connection() as conn:
+            list_id = find_list(conn, user["id"], list)
+            deleted = tasks.delete_done(conn, list_id)
+            view = snapshot.list_view(conn, list_id, user["id"])
+        return {"list": {"id": view["id"], "name": view["name"]}, "deleted": [_task(task) for task in deleted]}
+
+    @server.tool(annotations=DESTRUCTIVE)
+    def delete_list(list: Annotated[str, Field(description="The list's name or id.")]) -> dict:
+        """Delete a list and all its tasks, for everyone on it. Only its owner can. There is no undo:
+        check with the user first."""
+        user = _user.get()
+        with connection() as conn:
+            list_id = _owned_list(conn, user["id"], list)
+            view = snapshot.list_view(conn, list_id, user["id"])
+            count = conn.execute("SELECT COUNT(*) FROM tasks WHERE list_id = ?", (list_id,)).fetchone()[0]
+            lists.delete_list(conn, list_id)
+        return {"deleted": {"id": view["id"], "name": view["name"], "members": view["members"], "tasks": count}}
 
     return server
 

@@ -36,7 +36,10 @@ def test_initialize_and_the_tools(client, token):
     assert result["serverInfo"]["name"] == "Taskly" and "complete_task" in result["instructions"]
     tools = {tool["name"]: tool for tool in rpc(client, token, "tools/list")["tools"]}
     assert set(tools) == {"list_lists", "list_tasks", "create_list", "add_tasks", "complete_task", "set_task_status",
-                          "update_task", "delete_task"}
+                          "update_task", "delete_task", "rename_list", "clear_done", "delete_list"}
+    assert tools["rename_list"]["annotations"]["destructiveHint"] is False
+    assert tools["clear_done"]["annotations"]["destructiveHint"] is True
+    assert tools["delete_list"]["annotations"]["destructiveHint"] is True
     assert tools["set_task_status"]["inputSchema"]["properties"]["status"]["enum"] == ["new", "progress", "done"]
     assert tools["list_tasks"]["annotations"]["readOnlyHint"] is True
     assert tools["add_tasks"]["annotations"]["destructiveHint"] is False
@@ -256,6 +259,44 @@ def test_delete_a_task(client, token):
     assert "No such task" in call(client, token, "delete_task", task_id=milk["id"])
 
 
+def test_rename_a_list(client, token):
+    groceries = new_list(client, "Groceries")
+    renamed = call(client, token, "rename_list", list="groceries", name="  Food ")
+    assert (renamed["id"], renamed["name"], renamed["owner"]) == (groceries["id"], "Food", "maria")
+    assert client.get("/api/sync").json()["lists"][0]["name"] == "Food"
+    assert "name" in call(client, token, "rename_list", list="Food", name="  ")
+    assert "name" in call(client, token, "rename_list", list="Food", name="x" * 101)
+    assert "no list called" in call(client, token, "rename_list", list="Groceries", name="Shop")
+
+
+def test_clear_done(client, token):
+    groceries, work = new_list(client, "Groceries"), new_list(client, "Work")
+    milk, eggs = new_task(client, groceries["id"], "Milk"), new_task(client, groceries["id"], "Eggs")
+    bread = new_task(client, groceries["id"], "Bread")
+    report = new_task(client, work["id"], "Report")
+    for task in [milk, eggs, report]:
+        client.patch(f"/api/tasks/{task['id']}", json={"status": "done"})
+    client.patch(f"/api/tasks/{bread['id']}", json={"status": "progress"})
+
+    cleared = call(client, token, "clear_done", list="Groceries")
+    assert cleared["list"] == {"id": groceries["id"], "name": "Groceries"}
+    assert sorted(t["title"] for t in cleared["deleted"]) == ["Eggs", "Milk"]
+    tasks_now = {l["name"]: [t["title"] for t in l["tasks"]] for l in client.get("/api/sync").json()["lists"]}
+    assert tasks_now == {"Groceries": ["Bread"], "Work": ["Report"]}  # only that list's done ones
+    assert call(client, token, "clear_done", list="Groceries")["deleted"] == []
+
+
+def test_delete_a_list(client, token):
+    groceries = new_list(client, "Groceries")
+    new_list(client, "Work")
+    for title in ["Milk", "Eggs"]:
+        new_task(client, groceries["id"], title)
+    deleted = call(client, token, "delete_list", list="Groceries")["deleted"]
+    assert deleted == {"id": groceries["id"], "name": "Groceries", "members": ["maria"], "tasks": 2}
+    assert [l["name"] for l in call(client, token, "list_lists")["lists"]] == ["Work"]
+    assert "no list called" in call(client, token, "delete_list", list=groceries["id"])
+
+
 def test_errors_are_tool_errors(client, token):
     assert "create_list makes one" in call(client, token, "list_tasks", list="Groceries")
     new_list(client, "Groceries")
@@ -299,6 +340,15 @@ def test_the_agent_has_the_users_rights(app, settings, client, token):
     assert "No such task" in call(client, token, "delete_task", task_id=secret["id"])
     assert call(client, token, "delete_task", task_id=chore["id"])["deleted"]["id"] == chore["id"]
     assert call(client, token, "add_tasks", list="shared", titles=["More"])["added"][0]["created_by"] == "maria"
+    # A member clears done tasks, as on the page; renaming and deleting the list are the owner's.
+    more = call(client, token, "list_tasks", list="Shared")["lists"][0]["tasks"][0]
+    call(client, token, "complete_task", task_id=more["id"])
+    assert [t["title"] for t in call(client, token, "clear_done", list="Shared")["deleted"]] == ["More"]
+    assert "Only the list's owner can do that (it's tom's)" in call(client, token, "rename_list", list="Shared", name="Mine")
+    assert "Only the list's owner can do that (it's tom's)" in call(client, token, "delete_list", list="Shared")
+    for tool, arguments in [("rename_list", {"name": "Mine"}), ("delete_list", {}), ("clear_done", {})]:
+        assert "no list called" in call(client, token, tool, list=private["id"], **arguments)
+    assert [l["name"] for l in tom.get("/api/sync").json()["lists"]] == ["Shared", "Tom's"]
 
 
 def test_the_2026_protocol_works_too(client, token):
