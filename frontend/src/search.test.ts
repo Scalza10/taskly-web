@@ -35,3 +35,15 @@ test("every word must match, in any order", () => {
 test("done tasks are found too, in the list's order (done ones last)", () => {
   expect(found("chocolate")).toEqual([["Groceries", ["3"]]]);
 });
+
+test("notes are searched too, with the title: every word in one or the other", () => {
+  const withNotes = [list("h", "Home", [
+    { ...task("7", "Plumber"), notes: "Ask about the leak\nhttps://example.com/sinks" },
+    { ...task("8", "Leak in the roof"), notes: null },
+  ])];
+  const ids = (query: string) => searchTasks(withNotes, query).flatMap((g) => g.tasks.map((t) => t.id));
+  expect(ids("sinks")).toEqual(["7"]);
+  expect(ids("leak")).toEqual(["7", "8"]);
+  expect(ids("plumber leak")).toEqual(["7"]);
+  expect(ids("roof sinks")).toEqual([]);
+});

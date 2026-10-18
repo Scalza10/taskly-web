@@ -95,7 +95,7 @@ body {
 
 h1, h2, p { margin: 0; }
 ul { margin: 0; padding: 0; list-style: none; }
-input, select, button { font: inherit; color: inherit; }
+input, select, button, textarea { font: inherit; color: inherit; }
 
 button {
   padding: 0;
@@ -304,6 +304,26 @@ ul.steps { display: flex; flex-direction: column; gap: 4px; padding-left: 20px; 
 /* The field has no ring of its own; the whole bar shows it. */
 .add-bar:has(input:focus-visible) { outline: 2px solid var(--primary); outline-offset: 2px; }
 .add { width: 46px; height: 46px; padding: 0; border-radius: 50%; font-size: 15px; }
+/* The bar, and under it the new task's notes when the notes button is on. */
+.add-form { display: flex; flex-direction: column; gap: 8px; }
+.add-notes-toggle { display: grid; flex: none; place-items: center; width: 36px; height: 36px; border-radius: 50%; color: var(--muted); }
+.add-notes-toggle svg { width: 18px; height: 18px; }
+.add-notes-toggle:hover { background: var(--ground); }
+.add-notes-toggle[aria-pressed="true"] { background: var(--tint); color: var(--link); }
+.add-notes {
+  padding: 12px 20px;
+  border: 0;
+  border-radius: 22px;
+  outline: none;
+  background: var(--raised);
+  box-shadow: var(--shadow-sm);
+  color: var(--text);
+  font-size: 14px;
+  line-height: 1.4;
+  resize: vertical;
+}
+.add-notes::placeholder { color: var(--muted); }
+.add-notes:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
 
 .tasks { display: flex; flex-direction: column; gap: 8px; }
 
@@ -326,6 +346,22 @@ ul.steps { display: flex; flex-direction: column; gap: 4px; padding-left: 20px; 
 .task .delete { grid-area: delete; align-self: start; margin-top: -4px; }
 .task .focus-on { grid-area: focus; align-self: start; margin-top: -4px; }
 .task.done .title { text-decoration: line-through; opacity: 0.5; }
+/* Notes: their first two lines under the title. */
+.task.has-notes { grid-template-areas: "check title focus delete" "check note focus delete" "check meta focus delete"; }
+.task .task-note { grid-area: note; min-width: 0; cursor: text; }
+.task-note, .card-notes {
+  display: -webkit-box;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.4;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+}
+.task-note a, .card-notes a, .notes-links a { color: var(--link); text-decoration: underline; text-underline-offset: 2px; }
 
 /* Renaming: the field takes the title's place. */
 input.title { padding: 0; border: 0; border-bottom: 1px solid var(--primary); outline: none; background: none; color: inherit; }
@@ -386,6 +422,28 @@ button.due-add:hover { background: var(--ground); }
 .due-day .text { padding: 6px 8px; font-size: 13px; }
 /* "That's 3:00 PM New York time.": a time set in another zone. */
 .due-note { flex-basis: 100%; font-size: 12px; color: var(--muted); }
+
+/* The notes button: like the calendar without a due date; tinted when there are notes. */
+.notes-button.has { color: var(--link); }
+
+/* The notes editor: a row under the task, across it, like the due date picker. */
+.notes-editor { display: flex; grid-column: 2 / -1; flex-direction: column; gap: 8px; padding-top: 6px; }
+.notes-editor textarea {
+  width: 100%;
+  padding: 10px 14px;
+  border: 1px solid var(--track);
+  border-radius: 16px;
+  background: var(--ground);
+  color: var(--text);
+  font-size: 14px;
+  line-height: 1.4;
+  resize: vertical;
+}
+.notes-editor textarea::placeholder { color: var(--muted); }
+.notes-links { display: flex; flex-wrap: wrap; gap: 4px 12px; min-width: 0; font-size: 12px; overflow-wrap: anywhere; }
+.notes-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.notes-actions .primary { height: 34px; padding: 0 14px; font-size: 13px; }
+.notes-actions .text { padding: 6px 8px; font-size: 13px; }
 
 /* "Due today": the List's filter, next to the list picker. */
 .filter {
@@ -524,6 +582,7 @@ button.clear-done { align-self: flex-start; }
   .select svg { right: 14px; }
   .add-bar { gap: 8px; padding: 6px 6px 6px 24px; }
   .add-bar input { height: 44px; font-size: 16px; }
+  .add-notes { padding: 14px 24px; font-size: 15px; }
   .add { width: auto; height: 48px; padding: 0 22px 0 18px; border-radius: 999px; }
 
   .tasks { gap: 10px; }
@@ -534,6 +593,7 @@ button.clear-done { align-self: flex-start; }
     padding: 18px 16px 18px 20px;
     border-radius: 24px;
   }
+  .task.has-notes { grid-template-areas: "check title chip focus delete" "check note chip focus delete" "check details chip focus delete"; }
   .task .check, .task .delete, .task .focus-on { align-self: center; margin-top: 0; }
   .task .title { font-size: 17px; }
   .task .meta { display: contents; }

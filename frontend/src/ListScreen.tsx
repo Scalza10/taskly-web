@@ -1,8 +1,8 @@
 // The List screen: which list (with its settings and a new one), the "Due today" filter, how many
 // things are open, the add bar, and the tasks. On a phone the list's links and the sync status
 // move to the bottom.
-import { CalendarCheck, ChevronDown, Plus } from "lucide-react";
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import { CalendarCheck, ChevronDown, NotebookPen, Plus } from "lucide-react";
+import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
 import { ApiError, type TaskList } from "./api";
 import { Empty } from "./Chrome";
 import { ClearDone } from "./ClearDone";
@@ -11,6 +11,7 @@ import { dueToday, localDay } from "./due";
 import { ListSettings } from "./ListSettings";
 import { isLoggedOut } from "./messages";
 import { NewList } from "./NewList";
+import { NOTES_MAX } from "./notes";
 import { headline } from "./stages";
 import { StatusLine } from "./StatusLine";
 import { TaskItem } from "./TaskItem";
@@ -134,7 +135,8 @@ export function ListScreen({ lists, current, me, local, enqueue, found, onChoose
 }
 
 // The add bar, the tasks shown, then "Clear done". The device picks a new task's id. While only the
-// tasks due today show, a task added is due today too, so it doesn't vanish as it's added.
+// tasks due today show, a task added is due today too, so it doesn't vanish as it's added. The
+// notes button opens a field for the new task's notes under the bar (Ctrl+Enter there adds too).
 type TasksProps = {
   list: TaskList; shown: TaskList["tasks"]; dueOnly: boolean; now: Date;
   enqueue: Enqueue; wide: boolean; found: string | null; onFocus: (taskId: string) => void;
@@ -142,34 +144,65 @@ type TasksProps = {
 
 function Tasks({ list, shown, dueOnly, now, enqueue, wide, found, onFocus }: TasksProps) {
   const [title, setTitle] = useState("");
+  const [withNotes, setWithNotes] = useState(false);
+  const [notes, setNotes] = useState("");
   const titleInput = useRef<HTMLInputElement>(null);
 
   async function add(event: FormEvent) {
     event.preventDefault();
     const trimmed = title.trim();
     if (!trimmed) return;
-    const body = { id: crypto.randomUUID(), list_id: list.id, title: trimmed, ...(dueOnly && { due_date: localDay(now) }) };
+    const note = withNotes ? notes.trim() : "";
+    const body = { id: crypto.randomUUID(), list_id: list.id, title: trimmed, ...(dueOnly && { due_date: localDay(now) }), ...(note ? { notes: note } : {}) };
     await enqueue({ method: "POST", path: "/api/tasks", body });
     setTitle("");
+    setNotes("");
+    setWithNotes(false);
     titleInput.current?.focus();
+  }
+
+  function onNotesKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
+    if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) {
+      event.preventDefault();
+      event.currentTarget.form?.requestSubmit();
+    }
   }
 
   return (
     <>
-      <form className="add-bar" onSubmit={add} autoComplete="off">
-        <input
-          ref={titleInput}
-          name="title"
-          aria-label="new task"
-          value={title}
-          onChange={(e) => setTitle(e.target.value)}
-          maxLength={500}
-          placeholder={dueOnly ? "What needs doing today?" : "What needs doing?"}
-        />
-        <button type="submit" className="primary add" aria-label={wide ? undefined : "Add"}>
-          <Plus size={wide ? 18 : 20} strokeWidth={2.5} aria-hidden="true" />
-          {wide && "Add"}
-        </button>
+      <form className="add-form" onSubmit={add} autoComplete="off">
+        <div className="add-bar">
+          <input
+            ref={titleInput}
+            name="title"
+            aria-label="new task"
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            maxLength={500}
+            placeholder={dueOnly ? "What needs doing today?" : "What needs doing?"}
+          />
+          <button type="button" className="add-notes-toggle" aria-pressed={withNotes} aria-label="notes for the new task" title="Add notes"
+            onClick={() => setWithNotes(!withNotes)}>
+            <NotebookPen aria-hidden="true" />
+          </button>
+          <button type="submit" className="primary add" aria-label={wide ? undefined : "Add"}>
+            <Plus size={wide ? 18 : 20} strokeWidth={2.5} aria-hidden="true" />
+            {wide && "Add"}
+          </button>
+        </div>
+        {withNotes && (
+          <textarea
+            className="add-notes"
+            aria-label="notes"
+            value={notes}
+            onChange={(e) => setNotes(e.target.value)}
+            onKeyDown={onNotesKeyDown}
+            maxLength={NOTES_MAX}
+            rows={3}
+            placeholder="Notes: links, details…"
+            autoFocus
+          />
+        )}
       </form>
       {shown.length > 0 ? (
         <>

@@ -2,14 +2,15 @@
 // card's button moves its task on: Start, Finish, Reopen; an In progress card also has Back (to
 // New). On a desktop a card can also be dragged to another column; on a phone (where the columns
 // stack and dragging fights scrolling) the buttons are the way. An open card's timer button focuses
-// on it on the Focus screen. A card with a due date shows it (set it on the List screen). Done ends
-// with "Clear done".
+// on it on the Focus screen. A card with a due date or notes shows them (the notes' first two lines;
+// set both on the List screen). Done ends with "Clear done".
 import { ArrowLeft, ArrowRight, CalendarDays, Timer } from "lucide-react";
 import { useState, type DragEvent } from "react";
 import type { Status, Task, TaskList } from "./api";
 import { Avatar, Empty } from "./Chrome";
 import { ClearDone } from "./ClearDone";
 import { dueOf } from "./due";
+import { NotesText } from "./TaskNotes";
 import { STAGES, moveChange, stage } from "./stages";
 import type { Enqueue } from "./useLocal";
 import { useWide } from "./useWide";
@@ -81,6 +82,7 @@ export function BoardScreen({ list, enqueue, onFocus }: Props) {
                   onDragEnd={endDrag}
                 >
                   <p className="card-title">{task.title}</p>
+                  {task.notes && <p className="card-notes"><NotesText text={task.notes} /></p>}
                   {due && (
                     <span className={`due due-${due.kind}`} title={due.full}>
                       <CalendarDays aria-hidden="true" />

@@ -1,21 +1,25 @@
 // One task on the List screen: the round box ticks it (unticking sends it back to New), click the
-// title to rename (Enter or leaving the field saves, Escape cancels), the chip shows its stage,
-// the calendar chip its due date and time (on an open task without one, just the calendar) and
-// opens the due date picker, the timer button (open tasks) focuses on it on the Focus screen, × deletes.
+// title to rename (Enter or leaving the field saves, Escape cancels), the notes' first two lines
+// show under it (click them to read them all and edit), the chip shows its stage, the calendar
+// chip its due date and time (on an open task without one, just the calendar) and opens the due
+// date picker, the notes button opens the notes (on an open task without any, adds them), the
+// timer button (open tasks) focuses on it on the Focus screen, Ã— deletes. One editor opens at a time.
 // A task opened from search scrolls into view and lights up for a moment (found).
-import { CalendarDays, CalendarPlus, Check, Timer, X } from "lucide-react";
-import { useEffect, useRef, useState, type FocusEvent, type KeyboardEvent } from "react";
+import { CalendarDays, CalendarPlus, Check, NotebookPen, NotebookText, Timer, X } from "lucide-react";
+import { useEffect, useRef, useState, type FocusEvent, type KeyboardEvent, type MouseEvent } from "react";
 import type { Task } from "./api";
 import { deviceZone, dueInput, dueOf, localDay, type DueInput } from "./due";
 import { DuePicker } from "./DuePicker";
+import { NotesEditor, NotesText } from "./TaskNotes";
 import { stage } from "./stages";
 import type { Enqueue } from "./useLocal";
 
 type Props = { task: Task; now: Date; enqueue: Enqueue; onFocus: (taskId: string) => void; found?: boolean };
+type Panel = "due" | "notes" | null;
 
 export function TaskItem({ task, now, enqueue, onFocus, found = false }: Props) {
   const [editing, setEditing] = useState(false);
-  const [picking, setPicking] = useState(false);
+  const [panel, setPanel] = useState<Panel>(null);
   const cancelled = useRef(false);
   const item = useRef<HTMLLIElement>(null);
 
@@ -45,7 +49,7 @@ export function TaskItem({ task, now, enqueue, onFocus, found = false }: Props) 
 
   // A time is kept with this device's time zone, so it is the same moment on every device.
   function pickDue(picked: DueInput | null) {
-    setPicking(false);
+    setPanel(null);
     const current = dueInput(task);
     if (picked?.date === current?.date && picked?.time === current?.time) return;
     const body = picked
@@ -54,10 +58,22 @@ export function TaskItem({ task, now, enqueue, onFocus, found = false }: Props) 
     void enqueue({ method: "PATCH", path, body });
   }
 
-  const due = dueOf(task, now);
+  function saveNotes(notes: string | null) {
+    setPanel(null);
+    if (notes !== task.notes) void enqueue({ method: "PATCH", path, body: { notes } });
+  }
 
-  const by = [task.created_by && `added by ${task.created_by}`, task.done_by && `done by ${task.done_by}`].filter(Boolean).join(" · ");
-  const classes = ["task", done && "done", task.pending && "pending", found && "found"].filter(Boolean).join(" ");
+  // Like the title, a click opens the editor; one on a link opens its page instead.
+  function onNoteClick(event: MouseEvent) {
+    if (!(event.target as Element).closest("a")) setPanel("notes");
+  }
+
+  const toggle = (which: Panel) => setPanel(panel === which ? null : which);
+  const due = dueOf(task, now);
+  const noteShown = Boolean(task.notes) && panel !== "notes";
+
+  const by = [task.created_by && `added by ${task.created_by}`, task.done_by && `done by ${task.done_by}`].filter(Boolean).join(" Â· ");
+  const classes = ["task", done && "done", task.pending && "pending", found && "found", noteShown && "has-notes"].filter(Boolean).join(" ");
 
   return (
     <li ref={item} className={classes}>
@@ -76,6 +92,7 @@ export function TaskItem({ task, now, enqueue, onFocus, found = false }: Props) 
       ) : (
         <span className="title" onClick={() => setEditing(true)}>{task.title}</span>
       )}
+      {noteShown && <p className="task-note" onClick={onNoteClick}><NotesText text={task.notes!} /></p>}
       {/* One wrapping row on a phone; on a desktop the chip goes right and the details stay under the title. */}
       <span className="meta">
         <span className={`chip chip-${task.status}`}>{stage(task.status).label}</span>
@@ -84,13 +101,25 @@ export function TaskItem({ task, now, enqueue, onFocus, found = false }: Props) 
             <button
               type="button"
               className={due ? `due due-${due.kind}` : "due due-add"}
-              aria-expanded={picking}
+              aria-expanded={panel === "due"}
               aria-label={due ? `due ${due.full}: change the due date of "${task.title}"` : `add a due date to "${task.title}"`}
               title={due ? due.full : "Add a due date"}
-              onClick={() => setPicking(!picking)}
+              onClick={() => toggle("due")}
             >
               {due ? <CalendarDays aria-hidden="true" /> : <CalendarPlus aria-hidden="true" />}
               {due?.label}
+            </button>
+          )}
+          {(task.notes || !done) && (
+            <button
+              type="button"
+              className={task.notes ? "due due-add notes-button has" : "due due-add notes-button"}
+              aria-expanded={panel === "notes"}
+              aria-label={task.notes ? `notes of "${task.title}"` : `add notes to "${task.title}"`}
+              title={task.notes ? "Notes" : "Add notes"}
+              onClick={() => toggle("notes")}
+            >
+              {task.notes ? <NotebookText aria-hidden="true" /> : <NotebookPen aria-hidden="true" />}
             </button>
           )}
           {by && <small className="by">{by}</small>}
@@ -104,9 +133,10 @@ export function TaskItem({ task, now, enqueue, onFocus, found = false }: Props) 
       <button type="button" className="delete" aria-label={`delete "${task.title}"`} onClick={() => void enqueue({ method: "DELETE", path })}>
         <X size={18} aria-hidden="true" />
       </button>
-      {picking && (
-        <DuePicker title={task.title} value={dueInput(task)} note={due?.note} today={localDay(now)} onPick={pickDue} onCancel={() => setPicking(false)} />
+      {panel === "due" && (
+        <DuePicker title={task.title} value={dueInput(task)} note={due?.note} today={localDay(now)} onPick={pickDue} onCancel={() => setPanel(null)} />
       )}
+      {panel === "notes" && <NotesEditor title={task.title} value={task.notes} onSave={saveNotes} onCancel={() => setPanel(null)} />}
     </li>
   );
 }

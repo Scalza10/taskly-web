@@ -4,7 +4,7 @@ import type { QueuedChange } from "./store";
 import { applyQueue, clearDoneChanges, statusText, syncedLabel } from "./view";
 
 function task(id: string, created_at: string, extra: Partial<Task> = {}): Task {
-  return { id, list_id: "L", title: id, status: "new", done: false, due_date: null, due_time: null, due_zone: null, created_by: "tom", done_by: null, created_at, updated_at: created_at, ...extra };
+  return { id, list_id: "L", title: id, status: "new", done: false, due_date: null, due_time: null, due_zone: null, notes: null, created_by: "tom", done_by: null, created_at, updated_at: created_at, ...extra };
 }
 
 const snapshot: Snapshot = {
@@ -112,6 +112,28 @@ test("a time comes and goes with its date, as on the server", () => {
     bread: ["2026-10-19", null, null], // a date alone has no time
     milk: [null, null, null],
   });
+});
+
+test("a snapshot stored before notes has none", () => {
+  const old = structuredClone(snapshot);
+  for (const t of old.lists[0].tasks) delete (t as Partial<Task>).notes;
+  expect(applyQueue(old, []).lists[0].tasks.map((t) => t.notes)).toEqual([null, null, null]);
+});
+
+test("notes set, changed and removed offline, and on a task created offline; other changes leave them", () => {
+  const view = applyQueue(snapshot, [
+    { method: "POST", path: "/api/tasks", body: { id: "n1", list_id: "L", title: "plumber", notes: "Call first" }, queuedAt: at },
+    { method: "POST", path: "/api/tasks", body: { id: "n2", list_id: "L", title: "jam" }, queuedAt: at },
+    { method: "PATCH", path: "/api/tasks/eggs", body: { notes: "A dozen" }, queuedAt: at },
+    { method: "PATCH", path: "/api/tasks/eggs", body: { title: "eggs (12)", status: "progress", due_date: "2026-10-18" }, queuedAt: at },
+    { method: "PATCH", path: "/api/tasks/bread", body: { notes: "Rye" }, queuedAt: at },
+    { method: "PATCH", path: "/api/tasks/bread", body: { notes: null }, queuedAt: at },
+    { method: "PATCH", path: "/api/tasks/milk", body: { notes: "Oat" }, queuedAt: at },
+    { method: "PATCH", path: "/api/tasks/milk", body: { notes: "" }, queuedAt: at },
+  ]);
+  const notes = Object.fromEntries(view.lists[0].tasks.map((t) => [t.id, t.notes]));
+  expect(notes).toEqual({ n1: "Call first", n2: null, eggs: "A dozen", bread: null, milk: null });
+  expect(view.lists[0].tasks.find((t) => t.id === "bread")).toMatchObject({ pending: true });
 });
 
 test("tasks with a due date come first, soonest first; a date alone after that day's times", () => {

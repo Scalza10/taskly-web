@@ -9,14 +9,16 @@ const TASKS = "/api/tasks";
 export type Connection = "online" | "offline" | "trouble";
 
 type DueBody = { due_date?: string | null; due_time?: string | null; due_zone?: string | null };
+type NotesBody = { notes?: string | null };
 
 export function applyQueue(snapshot: Snapshot, queue: QueuedChange[]): Snapshot {
-  // A snapshot stored by the page before tasks had a status has only done; one from before due dates or times has none.
+  // A snapshot stored by the page before tasks had a status has only done; one from before due dates, times or notes has none.
   const lists = snapshot.lists.map((list) => ({
     ...list,
     tasks: list.tasks.map((task) => ({
       ...task, status: task.status ?? (task.done ? "done" : "new"),
       due_date: task.due_date ?? null, due_time: task.due_time ?? null, due_zone: task.due_zone ?? null,
+      notes: task.notes ?? null,
     })),
   }));
   const find = (id: string) => {
@@ -29,12 +31,13 @@ export function applyQueue(snapshot: Snapshot, queue: QueuedChange[]): Snapshot 
 
   for (const change of queue) {
     if (change.method === "POST" && change.path === TASKS) {
-      const body = change.body as { id: string; list_id: string; title: string } & DueBody;
+      const body = change.body as { id: string; list_id: string; title: string } & DueBody & NotesBody;
       const list = lists.find((l) => l.id === body.list_id);
       if (!list || find(body.id)) continue;
       list.tasks.push({
         id: body.id, list_id: body.list_id, title: body.title, status: "new", done: false,
         due_date: body.due_date ?? null, due_time: body.due_time ?? null, due_zone: body.due_zone ?? null,
+        notes: body.notes || null,
         created_by: snapshot.me, done_by: null, created_at: change.queuedAt, updated_at: change.queuedAt, pending: true,
       });
       continue;
@@ -46,9 +49,10 @@ export function applyQueue(snapshot: Snapshot, queue: QueuedChange[]): Snapshot 
       found.list.tasks.splice(found.index, 1);
       continue;
     }
-    const body = change.body as { title?: string; done?: boolean; status?: Status } & DueBody;
+    const body = change.body as { title?: string; done?: boolean; status?: Status } & DueBody & NotesBody;
     const task = found.list.tasks[found.index];
     if (body.title !== undefined) task.title = body.title;
+    if (body.notes !== undefined) task.notes = body.notes || null; // null or "" removes them, as on the server
     if (body.due_date !== undefined) {
       // As the server does: the date replaces the due date as a whole, its time too; null removes it.
       task.due_date = body.due_date;
