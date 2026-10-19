@@ -181,7 +181,7 @@ button:focus-visible, .src:focus-visible { outline: 2px solid var(--accent); out
   <p class="lede">What the server keeps in its one SQLite file, how the tables point at each other, and what a phone keeps of it.</p>
   <dl class="facts">
     <div><dt>File</dt><dd><code>/data/taskly.db</code> (<code>~/taskly/data</code> on the VM)</dd></div>
-    <div><dt>Schema</dt><dd><code>PRAGMA user_version = 8</code></dd></div>
+    <div><dt>Schema</dt><dd><code>PRAGMA user_version = 9</code></dd></div>
     <div><dt>Journal</dt><dd><code>journal_mode = WAL</code></dd></div>
     <div><dt>Foreign keys</dt><dd><code>ON</code>, set on every connection</dd></div>
     <div><dt>Times</dt><dd><code>2026-09-28T12:00:00Z</code>: UTC text, set by SQLite</dd></div>
@@ -200,7 +200,8 @@ button:focus-visible, .src:focus-visible { outline: 2px solid var(--accent); out
         <button type="button" data-version="5" aria-pressed="false">5 · status</button>
         <button type="button" data-version="6" aria-pressed="false">6 · due dates</button>
         <button type="button" data-version="7" aria-pressed="false">7 · times</button>
-        <button type="button" data-version="8" aria-pressed="true">8 · notes</button>
+        <button type="button" data-version="8" aria-pressed="false">8 · notes</button>
+        <button type="button" data-version="9" aria-pressed="true">9 · repeats</button>
       </div>
     </div>
     <p class="version-note" id="version-note"></p>
@@ -304,6 +305,7 @@ button:focus-visible, .src:focus-visible { outline: 2px solid var(--accent); out
         <div class="row" style="--d:2"><code class="k">"due_date"</code><p class="v"><button type="button" class="src" data-col="tasks.due_date">tasks.due_date</button>: a day like "2026-10-17", or null</p></div>
         <div class="row" style="--d:2"><code class="k">"due_time", "due_zone"</code><p class="v"><button type="button" class="src" data-col="tasks.due_time">tasks.due_time</button> like "15:00" in <button type="button" class="src" data-col="tasks.due_zone">tasks.due_zone</button> like "America/New_York", or both null</p></div>
         <div class="row" style="--d:2"><code class="k">"notes"</code><p class="v"><button type="button" class="src" data-col="tasks.notes">tasks.notes</button>: plain text, or null</p></div>
+        <div class="row" style="--d:2"><code class="k">"repeat"</code><p class="v"><button type="button" class="src" data-col="tasks.repeat">tasks.repeat</button>: a rule like "FREQ=WEEKLY;BYDAY=MO", or null</p></div>
         <div class="row" style="--d:2"><code class="k">"created_by", "done_by"</code><p class="v"><button type="button" class="src" data-col="tasks.created_by">tasks.created_by</button>, <button type="button" class="src" data-col="tasks.done_by">tasks.done_by</button> as usernames, or null</p></div>
         <div class="row" style="--d:2"><code class="k">"created_at", "updated_at"</code><p class="v"><button type="button" class="src" data-col="tasks.created_at">tasks.created_at</button>, <button type="button" class="src" data-col="tasks.updated_at">tasks.updated_at</button></p></div>
       </div>
@@ -326,7 +328,7 @@ button:focus-visible, .src:focus-visible { outline: 2px solid var(--accent); out
           <dd>Task changes not sent yet, keyed by <code>seq</code> (auto-increment, so they go out in the order they were made): <code>{ seq, method, path, body, queuedAt }</code>.
             <ul class="calls">
               <li><code>POST /api/tasks</code> with <code>{ id, list_id, title, due_date?, due_time?, due_zone?, notes? }</code></li>
-              <li><code>PATCH /api/tasks/{id}</code> with <code>{ title?, status?, due_date?, due_time?, due_zone?, notes? }</code>, where <code>due_date</code> replaces the due date with its time, <code>due_date: null</code> removes it, and <code>notes: null</code> removes the notes (pages from before statuses sent <code>{ title?, done? }</code>, still accepted)</li>
+              <li><code>PATCH /api/tasks/{id}</code> with <code>{ title?, status?, due_date?, due_time?, due_zone?, repeat?, notes? }</code>, where <code>due_date</code> replaces the due date with its time (the picker sends <code>repeat</code> with them), <code>due_date: null</code> removes it and its repeat, and <code>notes: null</code> or <code>repeat: null</code> removes those (pages from before statuses sent <code>{ title?, done? }</code>, still accepted). Finishing a repeating task adds <code>next_id</code>, the next task's id, made on the phone, and <code>finished_on</code>, the day it was finished there.</li>
               <li><code>DELETE /api/tasks/{id}</code></li>
             </ul>
           </dd>
@@ -352,7 +354,7 @@ button:focus-visible, .src:focus-visible { outline: 2px solid var(--accent); out
     <li><strong>Finishing records who</strong><span>Moving a task to <code>done</code> sets <code>done_by</code> to whoever did it; any other status clears it. <code>done: false</code> from an older page reopens only a done task, so it can't undo "in progress". Every task change bumps the task's <code>updated_at</code>.</span></li>
     <li><strong>A due date is a day</strong><span>The API takes only <code>2026-10-17</code> for <code>due_date</code> (422 otherwise), and <code>null</code> in a <code>PATCH</code> removes it. The server never asks what day it is: today, tomorrow and overdue are the phone's call, by its own clock.</span></li>
     <li><strong>A time is a moment</strong><span>A time is a 24-hour <code>15:00</code> in the IANA zone of whoever set it, checked with Python's <code>zoneinfo</code>: one moment, shown by each phone in its own time, with the time where it was set when that reads differently ("That's 3:00 PM New York time"). Time and zone come together, only with their date, and a new <code>due_date</code> without a time drops the old one; SQLite checks the pairing too.</span></li>
-    <li><strong>Lengths</strong><span>Usernames are 2–32 letters, digits, <code>.</code>, <code>_</code> or <code>-</code>. List names are 1–100 characters and titles 1–500, trimmed. Notes are up to 2000, trimmed, line breaks kept; empty notes are stored as NULL. Passwords need at least 6.</span></li>
+    <li><strong>Lengths</strong><span>Usernames are 2–32 letters, digits, <code>.</code>, <code>_</code> or <code>-</code>. List names are 1–100 characters and titles 1–500, trimmed. Notes are up to 2000, trimmed, line breaks kept; empty notes are stored as NULL. A repeat rule is up to 200. Passwords need at least 6.</span></li>
     <li><strong>Sessions expire</strong><span>90 days after <code>last_used_at</code>, which is written at most once an hour. Expired rows are deleted at the next login, or when their cookie comes back.</span></li>
     <li><strong>Agents connect as a person</strong><span>An AI agent (Claude, Gemini) signs in through <code>/oauth/authorize</code> and gets a grant: a code is swapped once for an access token (1 hour) and a refresh token (90 days, replaced on every use). Codes and tokens are stored as SHA-256, like sessions. A password change, <code>reset-password</code>, <code>disable-user</code> and <code>revoke-sessions</code> delete the person's grants.</span></li>
     <li><strong>Foreign keys are on per connection</strong><span><code>db.connect()</code> runs <code>PRAGMA foreign_keys = ON</code>. SQLite leaves them off otherwise, and the cascades depend on them.</span></li>
@@ -375,14 +377,14 @@ button:focus-visible, .src:focus-visible { outline: 2px solid var(--accent); out
   <textarea id="svg-out" readonly hidden aria-label="The diagram as SVG"></textarea>
 </section>
 
-<footer class="foot">Drawn from <code>taskly/db.py</code> at schema 8, October 2026.</footer>
+<footer class="foot">Drawn from <code>taskly/db.py</code> at schema 9, October 2026.</footer>
 </main>
 
 <script id="model">
 // The schema as data. The page and docs/data-model.svg are both drawn from it.
 // since/until: the schema versions (PRAGMA user_version) a table, column or reference exists in.
 const MODEL = {
-  version: 8,
+  version: 9,
   // From schema 4 the OAuth tables need a band below the others.
   canvas: { width: 1160, height: 700, tall: { since: 4, height: 1210 } },
   versions: {
@@ -393,7 +395,8 @@ const MODEL = {
     5: { text: "Tasks move through new, in progress and done (the page's board): `tasks.status` replaces `tasks.done`. Done tasks became `done`, the rest `new`; `done_by` was kept." },
     6: { text: "Tasks can have a due date: `tasks.due_date`, a calendar day or NULL. Existing tasks have none." },
     7: { text: "A due date can have a time (an appointment): `tasks.due_time` in `tasks.due_zone`, the time zone it was set in, so it is the same moment for everyone." },
-    8: { text: "Tasks can have notes, the current schema: `tasks.notes`, plain text (links, details) or NULL. Existing tasks have none." },
+    8: { text: "Tasks can have notes: `tasks.notes`, plain text (links, details) or NULL. Existing tasks have none." },
+    9: { text: "Tasks with a due date can repeat, the current schema: `tasks.repeat`, a rule like `FREQ=WEEKLY;BYDAY=MO` or NULL. Finishing one makes the next. Existing tasks don't repeat." },
   },
   tables: [
     {
@@ -483,10 +486,12 @@ const MODEL = {
         { name: "due_time", since: 7, sql: "TEXT CHECK (due_time IS NULL OR (due_date IS NOT NULL AND due_time GLOB '[01][0-9]:[0-5][0-9]' OR …))", note: "A 24-hour clock time, `15:00`, in `due_zone`; NULL: no time. Needs a `due_date` (the day in `due_zone`)." },
         { name: "due_zone", since: 7, sql: "TEXT CHECK ((due_zone IS NULL) = (due_time IS NULL))", note: "The IANA time zone of whoever set the time, like `America/New_York`: with `due_date` and `due_time` it names one moment, which each page shows in its own time. Set exactly when `due_time` is." },
         { name: "notes", since: 8, sql: "TEXT CHECK (notes IS NULL OR notes <> '')", note: "Plain text, up to 2000 characters, trimmed, line breaks kept; the page shows web addresses in it as links. NULL: no notes, never an empty string." },
+        { name: "repeat", since: 9, sql: "TEXT CHECK (repeat IS NULL OR (due_date IS NOT NULL AND repeat GLOB 'FREQ=*'))", note: "How it repeats from its due date: a small part of iCalendar's RRULE (`FREQ`, `INTERVAL`, `BYDAY`, `BYMONTH`, `BYMONTHDAY`) plus `FROM=DONE`, counted from the day it's finished (`taskly/repeats.py`). Stored canonical, with the parts left out taken from the due date. Needs a `due_date`; removing it stops the repeat. NULL: it doesn't repeat." },
       ],
       indexes: [{ name: "tasks_list_id", on: "list_id" }],
       rules: [
         "The same id sent again to the same list is a retry: 200 and the stored task, unchanged. The same id in another list answers 409.",
+        "Finishing a repeating task makes the next one: a copy (list, title, notes, time, zone, author) due on the rule's next day not before today, with the rule, which the finished one gives up. Reopening it leaves both.",
       ],
       code: "`tasks.py`",
     },

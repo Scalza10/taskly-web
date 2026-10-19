@@ -72,8 +72,8 @@ each test gets its own database, so your local data is untouched) and
 | `DELETE /api/lists/{id}` | | 204; its tasks go too. Owner only |
 | `POST /api/lists/{id}/members` | `{"username": "tom"}` | 201 (200 if already in). Owner only; 404 for a name that is unknown or disabled |
 | `DELETE /api/lists/{id}/members/{username}` | | 204. The owner removes anyone; anyone can remove themselves (leave), except the owner (409) |
-| `POST /api/tasks` | `{"id": "<uuid>", "list_id": "<uuid>", "title": "Milk"}`, optionally `"notes": "The oat one"` and `"due_date": "2026-10-17"`, and with it `"due_time": "15:00", "due_zone": "America/New_York"` | 201 and the task. The same `id` again in the same list: 200 and the stored task (a safe retry). The same `id` in another list: 409 |
-| `PATCH /api/tasks/{id}` | Any of `{"title", "status", "done", "due_date", "notes"}`, and with `due_date` its `"due_time"` and `"due_zone"` | The task. `status` is `"new"`, `"progress"` or `"done"` (anything else: 422). `done: true` is status done; `done: false` reopens a done task as new and leaves one in progress alone. `status` wins if both are sent. Finishing records you as `done_by`; any other status clears it. `due_date` replaces the due date as a whole: its time too, so a `due_date` without `due_time` has no time, and `due_date: null` removes it; left out, it all stays. `due_time` and `due_zone` come together, only with `due_date` (422 otherwise). `notes` replaces the notes; `null` or `""` removes them; left out, they stay |
+| `POST /api/tasks` | `{"id": "<uuid>", "list_id": "<uuid>", "title": "Milk"}`, optionally `"notes": "The oat one"` and `"due_date": "2026-10-17"`, and with it `"due_time": "15:00", "due_zone": "America/New_York"` and `"repeat": "FREQ=WEEKLY;BYDAY=MO"` | 201 and the task. The same `id` again in the same list: 200 and the stored task (a safe retry). The same `id` in another list: 409 |
+| `PATCH /api/tasks/{id}` | Any of `{"title", "status", "done", "due_date", "notes", "repeat"}`, and with `due_date` its `"due_time"` and `"due_zone"`; finishing a repeating task, `"next_id"` and `"finished_on"` | The task. `status` is `"new"`, `"progress"` or `"done"` (anything else: 422). `done: true` is status done; `done: false` reopens a done task as new and leaves one in progress alone. `status` wins if both are sent. Finishing records you as `done_by`; any other status clears it. `due_date` replaces the due date as a whole: its time too, so a `due_date` without `due_time` has no time, and `due_date: null` removes it; left out, it all stays. `due_time` and `due_zone` come together, only with `due_date` (422 otherwise). `notes` replaces the notes; `null` or `""` removes them; left out, they stay. `repeat` replaces the rule (it needs a due date, else 422), `null` or `""` stops it, and removing the due date does too; a `due_date` alone moves a rule taken from the old date (every week on its weekday) with it. Finishing a repeating task makes the next one, which takes the rule over; `next_id` is its id (made by the page; another task's: 409, and nothing changes) and `finished_on` the day it was finished there; left out, a new id and today in the task's zone, else UTC's |
 | `DELETE /api/tasks/{id}` | | 204 |
 
 Every `/api` endpoint except login needs the session cookie (401 otherwise).
@@ -94,7 +94,7 @@ The site's address in these answers comes from the request (`https://<site>` beh
 `http://localhost:8000` locally), so there is nothing to configure.
 
 A task is `{"id", "list_id", "title", "status", "done", "due_date", "due_time", "due_zone",
-"notes", "created_by", "done_by", "created_at", "updated_at"}`: `status` is `"new"`, `"progress"` (in progress) or
+"notes", "repeat", "created_by", "done_by", "created_at", "updated_at"}`: `status` is `"new"`, `"progress"` (in progress) or
 `"done"`, and `done` is `status == "done"` (kept for pages and agents from before
 statuses); `due_date` is a calendar day (`"2026-10-17"`, no time or zone; anything
 else answers 422) or `null`, and the page decides by the device's own date whether
@@ -103,10 +103,16 @@ it is today, tomorrow or overdue; a task with a time (an appointment) also has
 whoever set it (`"America/New_York"`), so it is one moment for everyone and each
 device shows it in its own time (3 pm in Florida is 8 pm in the Canaries), else both
 `null`; `notes` is plain text (links, details; line breaks kept, and the page
-shows web addresses as links) or `null`, never `""`; people by username (`null` for tasks from before
+shows web addresses as links) or `null`, never `""`; `repeat` is how it repeats from
+its due date, or `null`: a small part of iCalendar's RRULE (`FREQ=DAILY|WEEKLY|MONTHLY|YEARLY`,
+`INTERVAL`, `BYDAY=MO,TH` for weeks, `BYMONTHDAY` and `BYMONTH`), plus `FROM=DONE`
+to count from the day it's finished instead of the schedule, stored with the parts
+left out taken from the due date (`taskly/repeats.py` has the rules). On the
+schedule the next one is due on its first day after the due date that isn't before
+today (missed ones are skipped); people by username (`null` for tasks from before
 accounts), times in UTC set by the server (`2026-09-28T12:00:00Z`). Task ids are
 UUIDs the page makes itself. Titles are trimmed and 1–500 characters, notes up to
-2000, list names 1–100 (422 otherwise). Anything in a list you're not in answers 404, as if it
+2000, repeat rules up to 200, list names 1–100 (422 otherwise). Anything in a list you're not in answers 404, as if it
 didn't exist; an owner's action by a member answers 403. Interactive docs are at
 `/docs` when `API_DOCS=true` is in `.env` (off by default, and on the VM: the
 site is public).
@@ -161,7 +167,7 @@ in Chrome and Edge, and shows these steps elsewhere (it's hidden in the installe
 - **Android (Chrome):** menu → **Install app** (or "Add to Home screen").
 - **Laptop (Chrome or Edge):** the install icon at the end of the address bar.
 
-**Offline** you can see and search your lists, add, tick, rename and delete tasks, set their due dates and notes, and clear a list's done ones. The
+**Offline** you can see and search your lists, add, tick, rename and delete tasks, set their due dates, repeats and notes, and clear a list's done ones; finishing a repeating task shows the next one at once. The
 line at the bottom says how many changes are waiting; they're sent when you're
 back online and the app is open (it doesn't sync in the background). It syncs
 when opened, every 30 seconds while open, and when you press **Sync** in the menu. Creating
@@ -192,14 +198,14 @@ and the page shows the changes on its next sync.
 | Tool | Does |
 |---|---|
 | `list_lists` | Your lists: name, owner, members, and how many tasks are open (in progress included), in progress, and done |
-| `list_tasks` | The open tasks of one list (by name or id) or of every list, soonest due first, then the rest oldest first, each with its `status`, `notes`, `due_date` and any `due_time` (in `due_zone`); `include_done` adds the finished ones |
+| `list_tasks` | The open tasks of one list (by name or id) or of every list, soonest due first, then the rest oldest first, each with its `status`, `notes`, `due_date`, any `due_time` (in `due_zone`) and `repeat`; `include_done` adds the finished ones |
 | `create_list` | Makes a list you own |
 | `rename_list` | Renames a list you own |
 | `delete_list` | Deletes a list you own, with its tasks, for everyone on it (no undo; Claude asks first) |
-| `add_tasks` | Adds tasks (up to 50) to a list, by name or id: `titles` for plain ones, `tasks` for ones with `notes` or a `due_date` (and `due_time` with its `due_zone`) |
-| `complete_task` | Closes a task; `done: false` opens it again |
-| `set_task_status` | Moves a task to `new`, `progress` (in progress) or `done`, like the page's board |
-| `update_task` | Changes a task's `title`, `notes` or `due_date` (with `due_time` and `due_zone`); what's left out (or `null`) stays, and `""` removes the notes or the due date |
+| `add_tasks` | Adds tasks (up to 50) to a list, by name or id: `titles` for plain ones, `tasks` for ones with `notes`, a `due_date` (and `due_time` with its `due_zone`) or a `repeat` (an RRULE like `FREQ=WEEKLY;BYDAY=MO`) |
+| `complete_task` | Closes a task; `done: false` opens it again. Closing a repeating one answers with `next`, the task it made; `today` (your date) is the day the next one counts from |
+| `set_task_status` | Moves a task to `new`, `progress` (in progress) or `done`, like the page's board; `done` on a repeating one answers with `next`, as `complete_task` does |
+| `update_task` | Changes a task's `title`, `notes`, `due_date` (with `due_time` and `due_zone`) or `repeat`; what's left out (or `null`) stays, and `""` removes the notes, the due date or the repeat |
 | `delete_task` | Deletes a task for everyone on its list (no undo; Claude asks first) |
 | `clear_done` | Deletes a list's finished tasks for everyone on it, like the page's "Clear done" (no undo; Claude asks first) |
 
@@ -274,6 +280,7 @@ taskly/
   sessions.py   the login session queries
   lists.py      lists and members: the queries
   tasks.py      tasks: the queries
+  repeats.py    repeating tasks: the rules (a part of RRULE) and the next one's due date
   snapshot.py   what a user can see (GET /api/sync)
   admin.py      python -m taskly.admin: create and manage accounts
   backup.py     python -m taskly.backup: copy the database to data/backups/
@@ -285,8 +292,9 @@ frontend/
     Login.tsx, Header.tsx, ChangePassword.tsx   the login screen, the header (screen tabs, your name, light/dark, the menu) and the phone's tab bar, the password form
     ListsPage.tsx   everything after logging in: the header and the List, Board and Focus screens
     ListScreen.tsx, TaskItem.tsx, NewList.tsx, ListSettings.tsx   the List screen: the picker, the "Due today" filter, the add bar, the tasks, new list, members and rename/delete
-    DuePicker.tsx, due.ts   a task's due date and time: the picker under a task (Today, Tomorrow, any day, none; a time if you like), and the chips' labels (today, tomorrow, overdue) and the filter, by the device's date and time zone
+    DuePicker.tsx, due.ts   a task's due date and time: the picker under a task (Today, Tomorrow, any day, none; a time if you like; how it repeats), and the chips' labels (today, tomorrow, overdue) and the filter, by the device's date and time zone
     TaskNotes.tsx, notes.ts   a task's notes: the text with its web addresses as links, and the editor under a task
+    repeat.ts, repeat.cases.json   repeating tasks: the picker's Repeat choices, what the chip says, and the next one's due date (the cases are the server's test cases too)
     BoardScreen.tsx   the Board: New, In progress and Done columns; buttons move a card, and on a desktop so does dragging it
     ClearDone.tsx   "Clear done" (List and Board): deletes a list's finished tasks after an inline confirmation
     SearchScreen.tsx, search.ts   search every list (the header's magnifier), on the device's copy
@@ -309,11 +317,11 @@ docs/
 One SQLite file: `/data/taskly.db` in the container, which is
 `~/taskly/data/taskly.db` on the VM. Deploys back it up and apply new migrations to it, but never replace it.
 
-![The tables in taskly.db at schema 8: users, sessions, lists, list_members and tasks, and for AI agents oauth_clients, oauth_codes, oauth_grants and oauth_tokens, and the columns that point from one to another](docs/data-model.svg)
+![The tables in taskly.db at schema 9: users, sessions, lists, list_members and tasks, and for AI agents oauth_clients, oauth_codes, oauth_grants and oauth_tokens, and the columns that point from one to another](docs/data-model.svg)
 
 [`docs/data-model.html`](docs/data-model.html) is the same diagram, interactive (open it
 from a clone in a browser): select a table, column or line for its rules and the code that
-uses it, step through schema versions 1 to 8, and see what `/api/sync` sends and what the
+uses it, step through schema versions 1 to 9, and see what `/api/sync` sends and what the
 phone keeps in IndexedDB.
 
 **Changing the schema:** append an SQL string to `MIGRATIONS` in `db.py`, for
