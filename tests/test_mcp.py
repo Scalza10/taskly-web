@@ -272,6 +272,18 @@ def test_finishing_a_repeating_task_answers_with_the_next(client, token):
     assert len(client.get("/api/sync").json()["lists"][0]["tasks"]) == 4
 
 
+def test_days_after_its_done_count_from_the_users_today(client, token):
+    # Late in the evening west of UTC, UTC's date is already tomorrow: the agent says which day it is.
+    chores = new_list(client)
+    plants = call(client, token, "add_tasks", list=chores["id"], tasks=[
+        {"title": "Plants", "due_date": "2026-10-19", "repeat": "FREQ=DAILY;INTERVAL=3;FROM=DONE"}])["added"][0]
+    done = call(client, token, "complete_task", task_id=plants["id"], today="2026-10-18")
+    assert done["next"]["due_date"] == "2026-10-21"
+    again = call(client, token, "set_task_status", task_id=done["next"]["id"], status="done", today="2026-10-20")
+    assert again["next"]["due_date"] == "2026-10-23"
+    assert "today" in call(client, token, "complete_task", task_id=plants["id"], today="2026-02-30")
+
+
 def test_close_and_reopen_a_task(client, token):
     milk = new_task(client, new_list(client)["id"], "Milk")
     closed = call(client, token, "complete_task", task_id=milk["id"])

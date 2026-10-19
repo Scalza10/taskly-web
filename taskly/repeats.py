@@ -190,7 +190,7 @@ def next_due(rule: str, due_date: str, today: str) -> str | None:
 
 
 def today_for(due_zone: str | None) -> str:
-    """Today for a task finished without the finisher's date (an agent, an older page): in its time
+    """Today for a task finished without the finisher's date (an older page, an agent that didn't say): in its time
     zone if it has a time, else UTC's, as the server knows no other. A day off late in the evening west
     of UTC, which matters only to FROM=DONE and to skipping missed days."""
     return datetime.now(ZoneInfo(due_zone) if due_zone else UTC).date().isoformat()

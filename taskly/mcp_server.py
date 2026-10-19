@@ -45,7 +45,8 @@ A task with a due date can repeat: repeat is an iCalendar RRULE, like FREQ=WEEKL
 FREQ=WEEKLY;INTERVAL=2;BYDAY=MO,TH or FREQ=MONTHLY;BYMONTHDAY=1; FROM=DONE counts from the day it's
 finished instead of the schedule (FREQ=DAILY;INTERVAL=3;FROM=DONE: 3 days after it's done). Finishing a
 repeating task adds the next one on its next day (complete_task and set_task_status answer with it as
-next), and the repeat moves to it. repeat="" stops it; deleting the task ends the series.
+next; give them today, the user's date, as days are counted from it), and the repeat moves to it.
+repeat="" stops it; deleting the task ends the series.
 delete_task removes one for everyone on its list, for good; clear_done removes a list's finished
 tasks, delete_list a whole list, also for everyone and for good. Only a list's owner renames
 (rename_list) or deletes it.
@@ -54,6 +55,9 @@ Lists can be named by id or by name."""
 REPEAT_HELP = ("How it repeats from its due date, an iCalendar RRULE: FREQ=DAILY, WEEKLY, MONTHLY or YEARLY, with "
                "INTERVAL, BYDAY (weekly: MO,TH), BYMONTHDAY (monthly, yearly) and BYMONTH (yearly); parts left out "
                "are the due date's. FROM=DONE counts from the day it's finished instead. Needs a due date.")
+
+TODAY_HELP = ("The user's date today, YYYY-MM-DD: when this finishes a repeating task, the next one's day is "
+              "counted from it. Leave out for the day in the task's time zone, else UTC's.")
 
 DUE_ZONE_HINT = ('due_zone is the IANA time zone the time is in, like "America/New_York": the user\'s own, so ask '
                  "them if you don't know it. Or leave out the time and zone for the day alone.")
@@ -135,10 +139,11 @@ def _add(conn: sqlite3.Connection, list_id: str, user_id: int, title: str, notes
     return task
 
 
-def _status_change(conn: sqlite3.Connection, task_id: str, user_id: int, **change) -> dict:
-    """The task after a change of status, with next: the task it made, if that finished a repeating one."""
+def _status_change(conn: sqlite3.Connection, task_id: str, user_id: int, today: str | None, **change) -> dict:
+    """The task after a change of status, with next: the task it made, if that finished a repeating one
+    (counted from today, the user's date, if the agent gave it)."""
     next_id = str(uuid4())
-    task = tasks.update_task(conn, task_id, user_id, next_id=next_id, **change)
+    task = tasks.update_task(conn, task_id, user_id, next_id=next_id, finished_on=today, **change)
     if task is None:  # deleted since _my_task
         raise ToolError("No such task. Task ids come from list_tasks.")
     made = tasks.get_task(conn, next_id)
@@ -233,13 +238,14 @@ def build(settings: Settings) -> MCPServer:
     def complete_task(
         task_id: Annotated[str, Field(description="The task's id, from list_tasks.")],
         done: Annotated[bool, Field(description="false opens a finished task again.")] = True,
+        today: Annotated[DueDate | None, Field(description=TODAY_HELP)] = None,
     ) -> dict:
         """Close (finish) a task, or open it again with done=false (a task in progress stays in progress).
         Finishing a repeating task adds the next one, answered as next."""
         user = _user.get()
         with connection() as conn:
             task = _my_task(conn, user["id"], task_id)
-            return _status_change(conn, task["id"], user["id"], done=done)
+            return _status_change(conn, task["id"], user["id"], today, done=done)
 
     @server.tool(annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=False, idempotentHint=True,
                                              openWorldHint=False))
@@ -247,13 +253,14 @@ def build(settings: Settings) -> MCPServer:
         task_id: Annotated[str, Field(description="The task's id, from list_tasks.")],
         status: Annotated[Literal["new", "progress", "done"], Field(
             description="new, progress (in progress, being worked on) or done; done is the same as complete_task.")],
+        today: Annotated[DueDate | None, Field(description=TODAY_HELP)] = None,
     ) -> dict:
         """Move a task to new, in progress or done, as on the page's board. Done on a repeating task adds
         the next one, answered as next."""
         user = _user.get()
         with connection() as conn:
             task = _my_task(conn, user["id"], task_id)
-            return _status_change(conn, task["id"], user["id"], status=status)
+            return _status_change(conn, task["id"], user["id"], today, status=status)
 
     @server.tool(annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=False, idempotentHint=True,
                                              openWorldHint=False))
