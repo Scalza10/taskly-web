@@ -3,7 +3,7 @@
 // show under it (click them to read them all and edit), the chip shows its stage, the calendar
 // chip its due date and time (on an open task without one, just the calendar; a repeating one adds
 // the repeat mark) and opens the due date picker, the notes button opens the notes (on an open task without any, adds them), the
-// timer button (open tasks) focuses on it on the Focus screen, Ã— deletes. One editor opens at a time.
+// timer button (open tasks) focuses on it on the Focus screen, × deletes. One editor opens at a time.
 // A task opened from search scrolls into view and lights up for a moment (found).
 import { CalendarDays, CalendarPlus, Check, NotebookPen, NotebookText, Repeat, Timer, X } from "lucide-react";
 import { useEffect, useRef, useState, type FocusEvent, type KeyboardEvent, type MouseEvent } from "react";
@@ -76,7 +76,7 @@ export function TaskItem({ task, now, enqueue, onFocus, found = false }: Props) 
   const dueText = due && (repeats ? `${due.full} · ${repeats}` : due.full);
   const noteShown = Boolean(task.notes) && panel !== "notes";
 
-  const by = [task.created_by && `added by ${task.created_by}`, task.done_by && `done by ${task.done_by}`].filter(Boolean).join(" Â· ");
+  const by = [task.created_by && `added by ${task.created_by}`, task.done_by && `done by ${task.done_by}`].filter(Boolean).join(" · ");
   const classes = ["task", done && "done", task.pending && "pending", found && "found", noteShown && "has-notes"].filter(Boolean).join(" ");
 
   return (

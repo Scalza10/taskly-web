@@ -67,6 +67,7 @@ The VM runs one Caddy (`~/proxy`, owns 80/443) and several apps, each its own Co
 - **Google Safe Browsing flagged the site as phishing** ("Dangerous site" in Chrome and Safari) right after the deploy: a password form on a free dynamic-DNS name, and the sign-in page names "Claude (claude.ai)". Only browsers are affected (the sign-in tab, the page); Claude's server calls are not. Lifting it is a Search Console review (README, "Talking to it from Claude"); a domain of our own is the lasting fix.
 
 ### App
+- **Windows PowerShell 5.1's `Get-Content`/`Set-Content` read files in the ANSI code page**, so rewriting a UTF-8 source with them garbles its non-ASCII characters: `TaskItem.tsx`'s "·" shipped as "Â·" (October 2026). Edit with the editor tools, or Python with explicit UTF-8; `frontend/src/encoding.test.ts` checks the page's sources.
 - **On Windows, `mimetypes` can map `.js` to `text/plain`** from the registry, and browsers then refuse the module script. `main.py` forces `text/javascript`; `test_page_and_its_files_are_served` guards it.
 - **`Settings` reads `.env` from the working directory.** Tests build settings with `tests/conftest.py::make_settings(tmp_path)`, which passes `_env_file=None`. Use it.
 - **Tests log in.** The `client` fixture is logged in as `maria`; `anon` isn't. `fast_passwords` (autouse) lowers scrypt's cost; `test_passwords` checks the real one. `conftest.connect_agent(client)` does what Claude does (register, sign in on the page, swap the code) and returns the tokens; `tests/test_mcp.py` speaks raw JSON-RPC to `/mcp` with them.
