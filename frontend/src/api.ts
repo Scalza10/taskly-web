@@ -8,6 +8,7 @@ export type Task = {
   due_date: string | null; // a calendar day, "2026-10-17" (see due.ts)
   due_time: string | null; due_zone: string | null; // "15:00" in "America/New_York", with the date, or both null
   notes: string | null; // plain text (see notes.ts); null, never "", when there are none
+  repeat: string | null; // how it repeats from its due date, like "FREQ=WEEKLY;BYDAY=MO" (see repeat.ts)
   created_by: string | null; done_by: string | null; created_at: string; updated_at: string;
   pending?: boolean; // only on this device: a change not sent yet
 };

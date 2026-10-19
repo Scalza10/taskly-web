@@ -4,7 +4,7 @@ import type { QueuedChange } from "./store";
 import { applyQueue, clearDoneChanges, statusText, syncedLabel } from "./view";
 
 function task(id: string, created_at: string, extra: Partial<Task> = {}): Task {
-  return { id, list_id: "L", title: id, status: "new", done: false, due_date: null, due_time: null, due_zone: null, notes: null, created_by: "tom", done_by: null, created_at, updated_at: created_at, ...extra };
+  return { id, list_id: "L", title: id, status: "new", done: false, due_date: null, due_time: null, due_zone: null, notes: null, repeat: null, created_by: "tom", done_by: null, created_at, updated_at: created_at, ...extra };
 }
 
 const snapshot: Snapshot = {
@@ -134,6 +134,77 @@ test("notes set, changed and removed offline, and on a task created offline; oth
   const notes = Object.fromEntries(view.lists[0].tasks.map((t) => [t.id, t.notes]));
   expect(notes).toEqual({ n1: "Call first", n2: null, eggs: "A dozen", bread: null, milk: null });
   expect(view.lists[0].tasks.find((t) => t.id === "bread")).toMatchObject({ pending: true });
+});
+
+// eggs, due on a Monday and repeating every Monday at 7:30 in Madrid, with notes; added by tom.
+function repeating(): Snapshot {
+  const copy = structuredClone(snapshot);
+  Object.assign(copy.lists[0].tasks[0], {
+    due_date: "2026-10-19", due_time: "07:30", due_zone: "Europe/Madrid", notes: "Both bins", repeat: "FREQ=WEEKLY;BYDAY=MO",
+  });
+  return copy;
+}
+const finish = (id: string, next_id: string, finished_on = "2026-10-21") =>
+  ({ method: "PATCH", path: `/api/tasks/${id}`, body: { status: "done", next_id, finished_on }, queuedAt: at }) as QueuedChange;
+const byId = (s: Snapshot) => Object.fromEntries(s.lists[0].tasks.map((t) => [t.id, t]));
+
+test("a snapshot stored before repeats has none", () => {
+  const old = structuredClone(snapshot);
+  for (const t of old.lists[0].tasks) delete (t as Partial<Task>).repeat;
+  expect(applyQueue(old, []).lists[0].tasks.map((t) => t.repeat)).toEqual([null, null, null]);
+});
+
+test("finishing a repeating task offline shows the next one, which takes the repeat over", () => {
+  const view = applyQueue(repeating(), [finish("eggs", "e2")]);
+  const tasks = byId(view);
+  expect(tasks.eggs).toMatchObject({ status: "done", repeat: null, pending: true });
+  expect(tasks.e2).toMatchObject({
+    list_id: "L", title: "eggs", notes: "Both bins", status: "new", done: false, done_by: null, due_date: "2026-10-26",
+    due_time: "07:30", due_zone: "Europe/Madrid", repeat: "FREQ=WEEKLY;BYDAY=MO", created_by: "tom", created_at: at, pending: true,
+  });
+  expect(titles(view)).toEqual(["eggs", "bread", "eggs", "milk"]); // due first, the finished one with the done ones
+});
+
+test("the next one can be changed, finished and deleted offline too", () => {
+  const view = applyQueue(repeating(), [
+    finish("eggs", "e2"),
+    { method: "PATCH", path: "/api/tasks/e2", body: { title: "eggs out" }, queuedAt: at },
+    finish("e2", "e3", "2026-10-26"),
+    { method: "DELETE", path: "/api/tasks/e3", queuedAt: at },
+  ]);
+  const tasks = byId(view);
+  expect(tasks.e2).toMatchObject({ title: "eggs out", status: "done", repeat: null });
+  expect(tasks.e3).toBeUndefined();
+});
+
+test("ticking twice, or unticking and ticking again, makes one next task", () => {
+  const twice = applyQueue(repeating(), [finish("eggs", "e2"), finish("eggs", "e3")]);
+  expect(Object.keys(byId(twice)).sort()).toEqual(["bread", "e2", "eggs", "milk"]);
+  const again = applyQueue(repeating(), [
+    finish("eggs", "e2"),
+    { method: "PATCH", path: "/api/tasks/eggs", body: { status: "new" }, queuedAt: at },
+    { method: "PATCH", path: "/api/tasks/eggs", body: { status: "done" }, queuedAt: at }, // no repeat left: nothing to name
+  ]);
+  const tasks = byId(again);
+  expect(Object.keys(tasks).sort()).toEqual(["bread", "e2", "eggs", "milk"]); // both stay
+  expect([tasks.eggs.repeat, tasks.e2.repeat]).toEqual([null, "FREQ=WEEKLY;BYDAY=MO"]);
+});
+
+test("an older page's finish drops the repeat; the server makes the next one, shown after the sync", () => {
+  const view = applyQueue(repeating(), [{ method: "PATCH", path: "/api/tasks/eggs", body: { done: true }, queuedAt: at }]);
+  expect(Object.keys(byId(view)).sort()).toEqual(["bread", "eggs", "milk"]);
+  expect(byId(view).eggs.repeat).toBeNull();
+});
+
+test("a repeat set, changed and stopped offline; removing the due date stops it", () => {
+  const view = applyQueue(repeating(), [
+    { method: "PATCH", path: "/api/tasks/bread", body: { due_date: "2026-10-20", due_time: null, due_zone: null, repeat: "FREQ=DAILY" }, queuedAt: at },
+    { method: "PATCH", path: "/api/tasks/milk", body: { due_date: "2026-10-20", repeat: "FREQ=DAILY" }, queuedAt: at },
+    { method: "PATCH", path: "/api/tasks/milk", body: { repeat: null }, queuedAt: at },
+    { method: "PATCH", path: "/api/tasks/eggs", body: { due_date: null }, queuedAt: at },
+  ]);
+  const repeats = Object.fromEntries(view.lists[0].tasks.map((t) => [t.id, t.repeat]));
+  expect(repeats).toEqual({ bread: "FREQ=DAILY", milk: null, eggs: null });
 });
 
 test("tasks with a due date come first, soonest first; a date alone after that day's times", () => {

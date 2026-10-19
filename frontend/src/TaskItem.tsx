@@ -1,17 +1,18 @@
 // One task on the List screen: the round box ticks it (unticking sends it back to New), click the
 // title to rename (Enter or leaving the field saves, Escape cancels), the notes' first two lines
 // show under it (click them to read them all and edit), the chip shows its stage, the calendar
-// chip its due date and time (on an open task without one, just the calendar) and opens the due
-// date picker, the notes button opens the notes (on an open task without any, adds them), the
+// chip its due date and time (on an open task without one, just the calendar; a repeating one adds
+// the repeat mark) and opens the due date picker, the notes button opens the notes (on an open task without any, adds them), the
 // timer button (open tasks) focuses on it on the Focus screen, Ã— deletes. One editor opens at a time.
 // A task opened from search scrolls into view and lights up for a moment (found).
-import { CalendarDays, CalendarPlus, Check, NotebookPen, NotebookText, Timer, X } from "lucide-react";
+import { CalendarDays, CalendarPlus, Check, NotebookPen, NotebookText, Repeat, Timer, X } from "lucide-react";
 import { useEffect, useRef, useState, type FocusEvent, type KeyboardEvent, type MouseEvent } from "react";
 import type { Task } from "./api";
 import { deviceZone, dueInput, dueOf, localDay, type DueInput } from "./due";
 import { DuePicker } from "./DuePicker";
+import { describeRule } from "./repeat";
 import { NotesEditor, NotesText } from "./TaskNotes";
-import { stage } from "./stages";
+import { stage, statusChange } from "./stages";
 import type { Enqueue } from "./useLocal";
 
 type Props = { task: Task; now: Date; enqueue: Enqueue; onFocus: (taskId: string) => void; found?: boolean };
@@ -47,13 +48,14 @@ export function TaskItem({ task, now, enqueue, onFocus, found = false }: Props) 
     if (newTitle && newTitle !== task.title) void enqueue({ method: "PATCH", path, body: { title: newTitle } });
   }
 
-  // A time is kept with this device's time zone, so it is the same moment on every device.
+  // A time is kept with this device's time zone, so it is the same moment on every device. The
+  // date, time and repeat go together, so the rule's day is the date's as this device sees it.
   function pickDue(picked: DueInput | null) {
     setPanel(null);
     const current = dueInput(task);
-    if (picked?.date === current?.date && picked?.time === current?.time) return;
+    if (picked?.date === current?.date && picked?.time === current?.time && picked?.repeat === current?.repeat) return;
     const body = picked
-      ? { due_date: picked.date, due_time: picked.time, due_zone: picked.time ? deviceZone() : null }
+      ? { due_date: picked.date, due_time: picked.time, due_zone: picked.time ? deviceZone() : null, repeat: picked.repeat }
       : { due_date: null };
     void enqueue({ method: "PATCH", path, body });
   }
@@ -70,6 +72,8 @@ export function TaskItem({ task, now, enqueue, onFocus, found = false }: Props) 
 
   const toggle = (which: Panel) => setPanel(panel === which ? null : which);
   const due = dueOf(task, now);
+  const repeats = task.repeat ? describeRule(task.repeat) : undefined;
+  const dueText = due && (repeats ? `${due.full} · ${repeats}` : due.full);
   const noteShown = Boolean(task.notes) && panel !== "notes";
 
   const by = [task.created_by && `added by ${task.created_by}`, task.done_by && `done by ${task.done_by}`].filter(Boolean).join(" Â· ");
@@ -83,7 +87,7 @@ export function TaskItem({ task, now, enqueue, onFocus, found = false }: Props) 
         role="checkbox"
         aria-checked={done}
         aria-label={`done: ${task.title}`}
-        onClick={() => void enqueue({ method: "PATCH", path, body: { status: done ? "new" : "done" } })}
+        onClick={() => void enqueue(statusChange(task, done ? "new" : "done")!)}
       >
         {done && <Check size={14} strokeWidth={3.5} aria-hidden="true" />}
       </button>
@@ -102,12 +106,13 @@ export function TaskItem({ task, now, enqueue, onFocus, found = false }: Props) 
               type="button"
               className={due ? `due due-${due.kind}` : "due due-add"}
               aria-expanded={panel === "due"}
-              aria-label={due ? `due ${due.full}: change the due date of "${task.title}"` : `add a due date to "${task.title}"`}
-              title={due ? due.full : "Add a due date"}
+              aria-label={due ? `due ${dueText}: change the due date of "${task.title}"` : `add a due date to "${task.title}"`}
+              title={dueText ?? "Add a due date"}
               onClick={() => toggle("due")}
             >
               {due ? <CalendarDays aria-hidden="true" /> : <CalendarPlus aria-hidden="true" />}
               {due?.label}
+              {due && repeats && <Repeat aria-hidden="true" />}
             </button>
           )}
           {(task.notes || !done) && (

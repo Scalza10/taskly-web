@@ -9,8 +9,8 @@ import type { Task } from "./api";
 // is never overdue). note: the time where it was set, when that reads differently here.
 export type DueKind = "overdue" | "today" | "tomorrow" | "date";
 export type Due = { kind: DueKind; label: string; full: string; note?: string };
-// A due date as this device's pickers show it.
-export type DueInput = { date: string; time: string | null };
+// A due date as this device's pickers show it, and how it repeats from it (see repeat.ts).
+export type DueInput = { date: string; time: string | null; repeat: string | null };
 
 type DueFields = Pick<Task, "due_date" | "due_time" | "due_zone" | "status">;
 
@@ -79,6 +79,16 @@ export function instantOf(day: string, time: string, zone: string): Date {
   }
 }
 
+// The calendar day in a time zone at a moment; this device's if the zone is unknown here.
+export function dayIn(zone: string, at: Date): string {
+  try {
+    const there = new Date(at.getTime() + offset(at.getTime(), zone));
+    return `${String(there.getUTCFullYear()).padStart(4, "0")}-${pad(there.getUTCMonth() + 1)}-${pad(there.getUTCDate())}`;
+  } catch {
+    return localDay(at);
+  }
+}
+
 // When a task is due as this device sees it: the day here (with a time, it can be another day than
 // where it was set) and the moment, if it has a time. undefined: no due date.
 function dueHere(task: DueFields): { day: string; at?: Date } | undefined {
@@ -96,11 +106,11 @@ export function dueMoment(task: Pick<Task, "due_date" | "due_time" | "due_zone">
   return toDate(addDays(task.due_date, 1)).getTime();
 }
 
-// What the picker starts with: the day, and the time in this device's time.
-export function dueInput(task: DueFields): DueInput | null {
+// What the picker starts with: the day, the time in this device's time, and the repeat.
+export function dueInput(task: DueFields & { repeat?: string | null }): DueInput | null {
   const due = dueHere(task);
   if (!due) return null;
-  return { date: due.day, time: due.at ? localClock(due.at) : null };
+  return { date: due.day, time: due.at ? localClock(due.at) : null, repeat: task.repeat ?? null };
 }
 
 // "Today", "Tomorrow · 9:30 AM", "Overdue · Oct 15", "Overdue · 3:00 PM" (earlier today),

@@ -3,15 +3,16 @@
 // New). On a desktop a card can also be dragged to another column; on a phone (where the columns
 // stack and dragging fights scrolling) the buttons are the way. An open card's timer button focuses
 // on it on the Focus screen. A card with a due date or notes shows them (the notes' first two lines;
-// set both on the List screen). Done ends with "Clear done".
-import { ArrowLeft, ArrowRight, CalendarDays, Timer } from "lucide-react";
+// a repeating task's date with the repeat mark; set them on the List screen). Done ends with "Clear done".
+import { ArrowLeft, ArrowRight, CalendarDays, Repeat, Timer } from "lucide-react";
 import { useState, type DragEvent } from "react";
 import type { Status, Task, TaskList } from "./api";
 import { Avatar, Empty } from "./Chrome";
 import { ClearDone } from "./ClearDone";
 import { dueOf } from "./due";
+import { describeRule } from "./repeat";
 import { NotesText } from "./TaskNotes";
-import { STAGES, moveChange, stage } from "./stages";
+import { STAGES, stage, statusChange } from "./stages";
 import type { Enqueue } from "./useLocal";
 import { useWide } from "./useWide";
 
@@ -42,7 +43,7 @@ export function BoardScreen({ list, enqueue, onFocus }: Props) {
 
   function onDrop(event: DragEvent, status: Status) {
     event.preventDefault();
-    const change = dragging && moveChange(dragging, status);
+    const change = dragging && statusChange(dragging, status);
     endDrag();
     if (change) void enqueue(change);
   }
@@ -84,9 +85,10 @@ export function BoardScreen({ list, enqueue, onFocus }: Props) {
                   <p className="card-title">{task.title}</p>
                   {task.notes && <p className="card-notes"><NotesText text={task.notes} /></p>}
                   {due && (
-                    <span className={`due due-${due.kind}`} title={due.full}>
+                    <span className={`due due-${due.kind}`} title={task.repeat ? `${due.full} · ${describeRule(task.repeat)}` : due.full}>
                       <CalendarDays aria-hidden="true" />
                       {due.label}
+                      {task.repeat && <Repeat role="img" aria-label={describeRule(task.repeat)} />}
                     </span>
                   )}
                   <div className="card-foot">
@@ -106,7 +108,7 @@ export function BoardScreen({ list, enqueue, onFocus }: Props) {
                         className="action"
                         aria-label={`Back to ${stage(back).label}: ${task.title}`}
                         title={`Back to ${stage(back).label}`}
-                        onClick={() => void enqueue({ method: "PATCH", path: `/api/tasks/${task.id}`, body: { status: back } })}
+                        onClick={() => void enqueue(statusChange(task, back)!)}
                       >
                         <ArrowLeft size={13} strokeWidth={2.5} aria-hidden="true" />
                         Back
@@ -116,7 +118,7 @@ export function BoardScreen({ list, enqueue, onFocus }: Props) {
                       type="button"
                       className="action"
                       aria-label={`${action}: ${task.title}`}
-                      onClick={() => void enqueue({ method: "PATCH", path: `/api/tasks/${task.id}`, body: { status: next } })}
+                      onClick={() => void enqueue(statusChange(task, next)!)}
                     >
                       {action}
                       <ArrowRight size={13} strokeWidth={2.5} aria-hidden="true" />

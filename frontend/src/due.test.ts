@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test, vi } from "vitest";
 import type { Status, Task } from "./api";
-import { addDays, dueInput, dueOf, dueToday, instantOf, localDay } from "./due";
+import { addDays, dayIn, dueInput, dueOf, dueToday, instantOf, localDay } from "./due";
 
 type Due = Pick<Task, "due_date" | "due_time" | "due_zone">;
 const task = (id: string, due: Partial<Due> | string | null, status: Status = "new") => {
@@ -14,6 +14,14 @@ test("the device's date, as a calendar day", () => {
   expect(localDay(new Date(2026, 9, 17, 0, 0))).toBe("2026-10-17");
   expect(localDay(new Date(2026, 9, 17, 23, 59))).toBe("2026-10-17");
   expect(localDay(new Date(2026, 0, 5))).toBe("2026-01-05");
+});
+
+test("the day in a time zone at a moment", () => {
+  const at = new Date("2026-10-21T02:30:00Z");
+  expect(dayIn("America/Los_Angeles", at)).toBe("2026-10-20");
+  expect(dayIn("Europe/Madrid", at)).toBe("2026-10-21");
+  expect(dayIn("Pacific/Kiritimati", new Date("2026-12-31T11:00:00Z"))).toBe("2027-01-01");
+  expect(dayIn("Not/AZone", at)).toBe(localDay(at)); // a zone this browser doesn't know: this device's day
 });
 
 test("adding days crosses months and years", () => {
@@ -83,7 +91,7 @@ describe("times, between Florida and La Palma", () => {
     expect(dueOf(task("t", dentist), sat, "en-US", florida)).toEqual({
       kind: "tomorrow", label: "Tomorrow · 3:00 PM", full: "Sunday, October 18, 2026, 3:00 PM", note: undefined,
     });
-    expect(dueInput(task("t", dentist))).toEqual({ date: "2026-10-18", time: "15:00" });
+    expect(dueInput(task("t", dentist))).toEqual({ date: "2026-10-18", time: "15:00", repeat: null });
   });
 
   test("in La Palma it reads in La Palma's time, with Florida's in the note", () => {
@@ -93,7 +101,7 @@ describe("times, between Florida and La Palma", () => {
       kind: "tomorrow", label: "Tomorrow · 8:00 PM", full: "Sunday, October 18, 2026, 8:00 PM (3:00 PM New York time)",
       note: "3:00 PM New York time",
     });
-    expect(dueInput(task("t", dentist))).toEqual({ date: "2026-10-18", time: "20:00" });
+    expect(dueInput(task("t", dentist))).toEqual({ date: "2026-10-18", time: "20:00", repeat: null });
   });
 
   test("Saturday night in Florida is already Sunday in La Palma", () => {

@@ -1,6 +1,6 @@
 import { expect, test } from "vitest";
 import type { Status, Task } from "./api";
-import { focusTask, headline, moveChange, stage, workingOn } from "./stages";
+import { focusTask, headline, stage, statusChange, workingOn } from "./stages";
 
 const task = (title: string, status: Status) => ({ id: title, title, status }) as Task;
 
@@ -25,10 +25,25 @@ test("working on: the first task in progress, else the first new one", () => {
   expect(workingOn([task("a", "done")])).toBeUndefined();
 });
 
-test("dropping a card on another column moves it there; on its own column, nothing", () => {
-  expect(moveChange(task("a", "new"), "done")).toEqual({ method: "PATCH", path: "/api/tasks/a", body: { status: "done" } });
-  expect(moveChange(task("a", "done"), "progress")).toEqual({ method: "PATCH", path: "/api/tasks/a", body: { status: "progress" } });
-  expect(moveChange(task("a", "progress"), "progress")).toBeUndefined();
+test("moving a task to another stage changes its status; to its own, nothing", () => {
+  expect(statusChange(task("a", "new"), "done")).toEqual({ method: "PATCH", path: "/api/tasks/a", body: { status: "done" } });
+  expect(statusChange(task("a", "done"), "progress")).toEqual({ method: "PATCH", path: "/api/tasks/a", body: { status: "progress" } });
+  expect(statusChange(task("a", "progress"), "progress")).toBeUndefined();
+});
+
+test("finishing a repeating task names the next one and the day it was finished", () => {
+  const now = new Date("2026-10-21T02:30:00Z");
+  const weekly = { ...task("a", "progress"), due_date: "2026-10-19", repeat: "FREQ=WEEKLY;BYDAY=MO" } as Task;
+  const finish = statusChange(weekly, "done", now)!.body as { status: string; next_id: string; finished_on: string };
+  expect(finish.status).toBe("done");
+  expect(finish.next_id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
+  expect(finish.finished_on).toBe(`2026-10-${String(now.getDate()).padStart(2, "0")}`); // this device's day
+  // With a time: the day where it's due, as its date and rule are.
+  const timed = { ...weekly, due_time: "09:00", due_zone: "America/Los_Angeles" };
+  expect((statusChange(timed, "done", now)!.body as { finished_on: string }).finished_on).toBe("2026-10-20");
+  // Not when it's only moving along, or isn't repeating.
+  expect(statusChange(weekly, "new", now)!.body).toEqual({ status: "new" });
+  expect(statusChange(task("b", "new"), "done", now)!.body).toEqual({ status: "done" });
 });
 
 test("the Focus screen's task: the one picked if it's open in this list, else the one working on", () => {

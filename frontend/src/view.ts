@@ -2,6 +2,7 @@
 // top, sorted as the server sorts. Pure: easy to test, and the same answer every time.
 import type { Snapshot, Status, Task, TaskList } from "./api";
 import { dueMoment } from "./due";
+import { nextDue } from "./repeat";
 import type { QueuedChange, TaskChange } from "./store";
 
 const TASKS = "/api/tasks";
@@ -10,15 +11,18 @@ export type Connection = "online" | "offline" | "trouble";
 
 type DueBody = { due_date?: string | null; due_time?: string | null; due_zone?: string | null };
 type NotesBody = { notes?: string | null };
+type RepeatBody = { repeat?: string | null };
+// What the page sends when it finishes a repeating task: the next one's id and the day it was finished.
+type FinishBody = { next_id?: string; finished_on?: string };
 
 export function applyQueue(snapshot: Snapshot, queue: QueuedChange[]): Snapshot {
-  // A snapshot stored by the page before tasks had a status has only done; one from before due dates, times or notes has none.
+  // A snapshot stored by the page before tasks had a status has only done; one from before due dates, times, notes or repeats has none.
   const lists = snapshot.lists.map((list) => ({
     ...list,
     tasks: list.tasks.map((task) => ({
       ...task, status: task.status ?? (task.done ? "done" : "new"),
       due_date: task.due_date ?? null, due_time: task.due_time ?? null, due_zone: task.due_zone ?? null,
-      notes: task.notes ?? null,
+      notes: task.notes ?? null, repeat: task.repeat ?? null,
     })),
   }));
   const find = (id: string) => {
@@ -31,13 +35,13 @@ export function applyQueue(snapshot: Snapshot, queue: QueuedChange[]): Snapshot 
 
   for (const change of queue) {
     if (change.method === "POST" && change.path === TASKS) {
-      const body = change.body as { id: string; list_id: string; title: string } & DueBody & NotesBody;
+      const body = change.body as { id: string; list_id: string; title: string } & DueBody & NotesBody & RepeatBody;
       const list = lists.find((l) => l.id === body.list_id);
       if (!list || find(body.id)) continue;
       list.tasks.push({
         id: body.id, list_id: body.list_id, title: body.title, status: "new", done: false,
         due_date: body.due_date ?? null, due_time: body.due_time ?? null, due_zone: body.due_zone ?? null,
-        notes: body.notes || null,
+        notes: body.notes || null, repeat: body.repeat || null,
         created_by: snapshot.me, done_by: null, created_at: change.queuedAt, updated_at: change.queuedAt, pending: true,
       });
       continue;
@@ -49,7 +53,7 @@ export function applyQueue(snapshot: Snapshot, queue: QueuedChange[]): Snapshot 
       found.list.tasks.splice(found.index, 1);
       continue;
     }
-    const body = change.body as { title?: string; done?: boolean; status?: Status } & DueBody & NotesBody;
+    const body = change.body as { title?: string; done?: boolean; status?: Status } & DueBody & NotesBody & RepeatBody & FinishBody;
     const task = found.list.tasks[found.index];
     if (body.title !== undefined) task.title = body.title;
     if (body.notes !== undefined) task.notes = body.notes || null; // null or "" removes them, as on the server
@@ -59,11 +63,27 @@ export function applyQueue(snapshot: Snapshot, queue: QueuedChange[]): Snapshot 
       task.due_time = body.due_time ?? null;
       task.due_zone = body.due_zone ?? null;
     }
+    if (body.repeat !== undefined) task.repeat = body.repeat || null;
+    if (!task.due_date) task.repeat = null; // removing the due date stops the repeat
+    const wasDone = task.status === "done";
     const status = nextStatus(task.status, body);
     if (status !== undefined) {
       task.status = status;
       task.done = status === "done";
       task.done_by = task.done ? snapshot.me : null;
+    }
+    if (!wasDone && task.done && task.repeat) {
+      // As the server does: finishing a repeating task makes the next one, which takes the repeat
+      // over. Shown only with the id and day this page sends; for an older page's change, the server
+      // makes it with its own id, and it shows after the sync.
+      const due = body.next_id && body.finished_on ? nextDue(task.repeat, task.due_date!, body.finished_on) : null;
+      if (due && !find(body.next_id!)) {
+        found.list.tasks.push({
+          ...task, id: body.next_id!, status: "new", done: false, done_by: null, due_date: due,
+          created_at: change.queuedAt, updated_at: change.queuedAt, pending: true,
+        });
+      }
+      task.repeat = null;
     }
     task.pending = true;
   }
