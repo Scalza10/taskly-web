@@ -1,8 +1,10 @@
-// Which screen the tabs show: List, Board or Focus. Kept on this device, like the chosen list.
-export type Screen = "list" | "board" | "focus";
+// Which screen the tabs show: Today (every list), List, Board or Focus (the chosen list). Kept on
+// this device, like the chosen list; a new one starts on List.
+export type Screen = "today" | "list" | "board" | "focus";
 
 const KEY = "taskly.screen";
 export const SCREENS: { screen: Screen; label: string }[] = [
+  { screen: "today", label: "Today" },
   { screen: "list", label: "List" },
   { screen: "board", label: "Board" },
   { screen: "focus", label: "Focus" },
@@ -11,7 +13,7 @@ export const SCREENS: { screen: Screen; label: string }[] = [
 export function savedScreen(): Screen {
   try {
     const saved = localStorage.getItem(KEY);
-    if (saved === "list" || saved === "board" || saved === "focus") return saved;
+    if (SCREENS.some((s) => s.screen === saved)) return saved as Screen;
   } catch {
     // storage blocked
   }

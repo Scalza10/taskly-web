@@ -39,6 +39,13 @@ export function headline(tasks: Task[]): string {
   return `${WORDS[open] ?? open} things to tend to.`;
 }
 
+// The Today screen's: "All clear today.", "One thing for today.", "Four things for today.".
+export function todayHeadline(open: number): string {
+  if (open === 0) return "All clear today.";
+  if (open === 1) return "One thing for today.";
+  return `${WORDS[open] ?? open} things for today.`;
+}
+
 // The first task in progress, else the first new one.
 export function workingOn(tasks: Task[]): Task | undefined {
   return tasks.find((task) => task.status === "progress") ?? tasks.find((task) => task.status === "new");

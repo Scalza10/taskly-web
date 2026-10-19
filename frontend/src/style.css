@@ -146,7 +146,8 @@ button:disabled { opacity: 0.5; cursor: default; }
 .wordmark .pebble { width: 18px; height: 16px; background: var(--brand); }
 
 .who { display: flex; align-items: center; gap: 10px; }
-.who-name { margin-right: 6px; font-size: 14px; color: var(--soft); }
+/* A long username is cut, so four tabs and it still fit the header at 900px. */
+.who-name { max-width: 140px; margin-right: 6px; overflow: hidden; color: var(--soft); font-size: 14px; text-overflow: ellipsis; white-space: nowrap; }
 
 .avatar {
   display: grid;
@@ -484,6 +485,18 @@ button.due-add:hover { background: var(--ground); }
 .found-list { display: flex; align-items: center; gap: 10px; padding: 0 4px; font-size: 16px; font-weight: 600; }
 .task.found-task { display: flex; justify-content: space-between; width: 100%; text-align: left; }
 .task.found-task:hover { background: var(--tint); }
+
+/* ---------- Today ---------- */
+
+/* A section's heading, a row of the one list of tasks; space above all but the first. */
+.today-heading { padding-top: 10px; }
+.today-heading:first-child { padding-top: 0; }
+/* Which list a task is in. */
+.list-tag { max-width: 160px; padding: 1px 8px; border-radius: 999px; background: var(--ground); color: var(--soft); font-size: 11px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* The list to add to, in the add bar: it gives way to the title and cuts a long name. */
+.add-bar .select { flex: 0 1 auto; min-width: 0; max-width: 40%; margin-right: 0; }
+.add-bar .select select { width: 100%; padding: 7px 30px 7px 12px; border: 0; background: var(--ground); font-size: 13px; font-weight: 500; }
+.add-bar .select svg { right: 10px; }
 
 /* "Clear done": under the tasks, and at the foot of the Board's Done column. */
 button.clear-done { align-self: flex-start; }

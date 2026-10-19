@@ -85,6 +85,7 @@ export function applyQueue(snapshot: Snapshot, queue: QueuedChange[]): Snapshot 
       }
       task.repeat = null;
     }
+    task.updated_at = change.queuedAt; // as the server bumps it (the Today screen's "Done today" reads it)
     task.pending = true;
   }
 

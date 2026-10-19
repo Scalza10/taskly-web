@@ -1,6 +1,6 @@
 import { expect, test } from "vitest";
 import type { Status, Task } from "./api";
-import { focusTask, headline, stage, statusChange, workingOn } from "./stages";
+import { focusTask, headline, stage, statusChange, todayHeadline, workingOn } from "./stages";
 
 const task = (title: string, status: Status) => ({ id: title, title, status }) as Task;
 
@@ -11,6 +11,13 @@ test("the headline counts the tasks not done, in words up to nine", () => {
   expect(headline([task("a", "new"), task("b", "progress")])).toBe("Two things to tend to.");
   expect(headline(Array.from({ length: 9 }, (_, i) => task(`${i}`, "new")))).toBe("Nine things to tend to.");
   expect(headline(Array.from({ length: 10 }, (_, i) => task(`${i}`, "new")))).toBe("10 things to tend to.");
+});
+
+test("the Today screen's headline counts what's left for today", () => {
+  expect(todayHeadline(0)).toBe("All clear today.");
+  expect(todayHeadline(1)).toBe("One thing for today.");
+  expect(todayHeadline(4)).toBe("Four things for today.");
+  expect(todayHeadline(12)).toBe("12 things for today.");
 });
 
 test("the board moves a task new → in progress → done → new", () => {

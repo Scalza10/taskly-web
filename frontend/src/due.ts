@@ -1,8 +1,8 @@
 // Due dates: a calendar day ("2026-10-17", no time or zone) as the server stores it, compared with
 // this device's own date. A task can also have a time ("15:00") in the time zone it was set in
 // (due_zone, like "America/New_York"): one moment for everyone, shown in this device's own time,
-// so a 3 pm appointment set in Florida reads 8 pm in the Canaries. The chips on the List and the
-// Board, the List's picker and its "Due today" filter.
+// so a 3 pm appointment set in Florida reads 8 pm in the Canaries. The chips on the Today, List and
+// Board screens (and Today's sections, today.ts), the List's picker and its "Due today" filter.
 import type { Task } from "./api";
 
 // overdue: before today (with a time: before now) and not done. date: any other day (a done task

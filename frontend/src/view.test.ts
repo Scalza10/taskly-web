@@ -148,6 +148,12 @@ const finish = (id: string, next_id: string, finished_on = "2026-10-21") =>
   ({ method: "PATCH", path: `/api/tasks/${id}`, body: { status: "done", next_id, finished_on }, queuedAt: at }) as QueuedChange;
 const byId = (s: Snapshot) => Object.fromEntries(s.lists[0].tasks.map((t) => [t.id, t]));
 
+test("a change offline bumps the task's updated_at, as the server does", () => {
+  const view = applyQueue(snapshot, [{ method: "PATCH", path: "/api/tasks/eggs", body: { status: "done" }, queuedAt: at }]);
+  expect(view.lists[0].tasks.find((t) => t.id === "eggs")?.updated_at).toBe(at);
+  expect(view.lists[0].tasks.find((t) => t.id === "bread")?.updated_at).toBe("2026-09-28T10:00:00Z");
+});
+
 test("a snapshot stored before repeats has none", () => {
   const old = structuredClone(snapshot);
   for (const t of old.lists[0].tasks) delete (t as Partial<Task>).repeat;

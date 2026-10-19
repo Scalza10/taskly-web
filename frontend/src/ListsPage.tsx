@@ -1,6 +1,7 @@
-// Everything after logging in: the header, the List, Board and Focus screens (the tabs), search
-// (over the screen while open), and on a phone the tab bar. The lists come from the device's copy (works offline); task changes queue up
-// and sync, list and member changes go straight to the server and need a connection.
+// Everything after logging in: the header, the Today, List, Board and Focus screens (the tabs),
+// search (over the screen while open), and on a phone the tab bar. The lists come from the device's
+// copy (works offline); task changes queue up and sync, list and member changes go straight to the
+// server and need a connection.
 import { useEffect, useState, type ReactNode } from "react";
 import { BoardScreen } from "./BoardScreen";
 import { Empty } from "./Chrome";
@@ -11,6 +12,7 @@ import { pickList, savedList, saveList } from "./pickList";
 import { savedScreen, saveScreen, type Screen } from "./screen";
 import { SearchScreen } from "./SearchScreen";
 import { StatusLine } from "./StatusLine";
+import { TodayScreen } from "./TodayScreen";
 import { useLocal } from "./useLocal";
 import { keepCounts, pick } from "./timer";
 import { useTimer } from "./useTimer";
@@ -57,7 +59,10 @@ export function ListsPage({ username, notes, onLogout, onSessionLost }: Props) {
     saveList(id);
   }
 
-  function focusOn(taskId: string) {
+  // From Today the task can be in any list: that list becomes the chosen one, as the Focus screen
+  // shows the chosen list's tasks (and the List tab then shows it too).
+  function focusOn(taskId: string, listId?: string) {
+    if (listId) choose(listId);
     act((t) => pick(t, taskId));
     show("focus");
   }
@@ -81,6 +86,8 @@ export function ListsPage({ username, notes, onLogout, onSessionLost }: Props) {
     const current = view.lists.find((list) => list.id === pickList(view.lists, selected));
     if (searching) {
       content = <SearchScreen lists={view.lists} onOpen={openFound} onClose={() => setSearching(false)} />;
+    } else if (screen === "today") {
+      content = <TodayScreen lists={view.lists} local={local} enqueue={enqueue} onFocus={focusOn} />;
     } else if (screen === "list") {
       content = (
         <ListScreen
