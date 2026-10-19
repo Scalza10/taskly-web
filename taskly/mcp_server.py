@@ -30,7 +30,7 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse
 
 from . import auth, db, lists, oauth, oauth_routes, snapshot, tasks
-from .routes import Due, DueDate, DueTime, DueZone, ListName, Notes, Title, calendar_day, due_problem
+from .routes import DueDate, DueRepeat, DueTime, DueZone, ListName, Notes, Repeat, Title, calendar_day, due_problem
 from .settings import Settings
 
 INSTRUCTIONS = """Taskly holds the user's to-do lists, some shared with other people.
@@ -40,11 +40,20 @@ A task's status is new, progress (in progress, being worked on) or done; set_tas
 A task can have notes (plain text: links, details) and a due date (YYYY-MM-DD), optionally with a
 time (HH:MM, 24-hour) in the IANA time zone it is in, like America/New_York: the user's own, so ask
 them if you don't know it. add_tasks sets them on new tasks (its tasks argument).
-update_task changes a task's title, notes or due date; leave out what stays, "" removes notes or the due date.
+update_task changes a task's title, notes, due date or repeat; leave out what stays, "" removes one.
+A task with a due date can repeat: repeat is an iCalendar RRULE, like FREQ=WEEKLY;BYDAY=MO (every Monday),
+FREQ=WEEKLY;INTERVAL=2;BYDAY=MO,TH or FREQ=MONTHLY;BYMONTHDAY=1; FROM=DONE counts from the day it's
+finished instead of the schedule (FREQ=DAILY;INTERVAL=3;FROM=DONE: 3 days after it's done). Finishing a
+repeating task adds the next one on its next day (complete_task and set_task_status answer with it as
+next), and the repeat moves to it. repeat="" stops it; deleting the task ends the series.
 delete_task removes one for everyone on its list, for good; clear_done removes a list's finished
 tasks, delete_list a whole list, also for everyone and for good. Only a list's owner renames
 (rename_list) or deletes it.
 Lists can be named by id or by name."""
+
+REPEAT_HELP = ("How it repeats from its due date, an iCalendar RRULE: FREQ=DAILY, WEEKLY, MONTHLY or YEARLY, with "
+               "INTERVAL, BYDAY (weekly: MO,TH), BYMONTHDAY (monthly, yearly) and BYMONTH (yearly); parts left out "
+               "are the due date's. FROM=DONE counts from the day it's finished instead. Needs a due date.")
 
 DUE_ZONE_HINT = ('due_zone is the IANA time zone the time is in, like "America/New_York": the user\'s own, so ask '
                  "them if you don't know it. Or leave out the time and zone for the day alone.")
@@ -54,7 +63,7 @@ DueDateOrEmpty = Annotated[str, StringConstraints(pattern=r"^([0-9]{4}-[0-9]{2}-
                            AfterValidator(lambda text: calendar_day(text) if text else text)]
 
 
-class NewTask(Due):
+class NewTask(DueRepeat):
     """A task to add, with more than a title."""
     title: Annotated[Title, Field(description="The task's title.")]
     notes: Annotated[Notes | None, Field(description="Notes: plain text, links, details.")] = None
@@ -62,6 +71,7 @@ class NewTask(Due):
     due_time: Annotated[DueTime | None, Field(description="A time that day, HH:MM (24-hour); needs due_zone.")] = None
     due_zone: Annotated[DueZone | None, Field(
         description='The IANA time zone of due_time, like "America/New_York" (the user\'s).')] = None
+    repeat: Annotated[Repeat | None, Field(description=REPEAT_HELP)] = None
 
 
 # Spelled out in the tool's schema rather than as a $ref, which some clients don't follow.
@@ -114,14 +124,25 @@ def _owned_list(conn: sqlite3.Connection, user_id: int, ref: str) -> str:
 def _task(task: dict) -> dict:
     """A task as the agent sees it: list_id is implied by where it is."""
     return {key: task[key] for key in ("id", "title", "notes", "status", "done", "due_date", "due_time", "due_zone",
-                                       "created_by", "done_by", "created_at")}
+                                       "repeat", "created_by", "done_by", "created_at")}
 
 
 def _add(conn: sqlite3.Connection, list_id: str, user_id: int, title: str, notes: str | None = None,
-         due_date: str | None = None, due_time: str | None = None, due_zone: str | None = None) -> dict:
+         due_date: str | None = None, due_time: str | None = None, due_zone: str | None = None,
+         repeat: str | None = None) -> dict:
     """A new task (out here: add_tasks' argument "tasks" hides the module)."""
-    task, _ = tasks.create_task(conn, str(uuid4()), list_id, title, user_id, due_date, due_time, due_zone, notes)
+    task, _ = tasks.create_task(conn, str(uuid4()), list_id, title, user_id, due_date, due_time, due_zone, notes, repeat)
     return task
+
+
+def _status_change(conn: sqlite3.Connection, task_id: str, user_id: int, **change) -> dict:
+    """The task after a change of status, with next: the task it made, if that finished a repeating one."""
+    next_id = str(uuid4())
+    task = tasks.update_task(conn, task_id, user_id, next_id=next_id, **change)
+    if task is None:  # deleted since _my_task
+        raise ToolError("No such task. Task ids come from list_tasks.")
+    made = tasks.get_task(conn, next_id)
+    return {**_task(task), "next": _task(made)} if made else _task(task)
 
 
 def _my_task(conn: sqlite3.Connection, user_id: int, task_id: str) -> dict:
@@ -190,11 +211,11 @@ def build(settings: Settings) -> MCPServer:
         list: Annotated[str, Field(description="The list's name or id.")],
         titles: Annotated[list[Title] | None, Field(max_length=50, description="One title per task.")] = None,
         tasks: Annotated[list[NewTaskItem] | None, Field(max_length=50, description=(
-            "Tasks with notes or a due date, each {title, notes?, due_date?, due_time?, due_zone?}; "
+            "Tasks with notes, a due date or a repeat, each {title, notes?, due_date?, due_time?, due_zone?, repeat?}; "
             "added after the titles."))] = None,
     ) -> dict:
-        """Add tasks to a list: titles for plain ones, tasks for ones with notes or a due date, up to 50
-        in all. Returns the new tasks with their ids."""
+        """Add tasks to a list: titles for plain ones, tasks for ones with notes, a due date or a repeat,
+        up to 50 in all. Returns the new tasks with their ids."""
         user = _user.get()
         items = [{"title": title} for title in titles or []] + [item.model_dump() for item in tasks or []]
         if not items:
@@ -213,11 +234,12 @@ def build(settings: Settings) -> MCPServer:
         task_id: Annotated[str, Field(description="The task's id, from list_tasks.")],
         done: Annotated[bool, Field(description="false opens a finished task again.")] = True,
     ) -> dict:
-        """Close (finish) a task, or open it again with done=false (a task in progress stays in progress)."""
+        """Close (finish) a task, or open it again with done=false (a task in progress stays in progress).
+        Finishing a repeating task adds the next one, answered as next."""
         user = _user.get()
         with connection() as conn:
             task = _my_task(conn, user["id"], task_id)
-            return _task(tasks.update_task(conn, task["id"], user["id"], done=done))
+            return _status_change(conn, task["id"], user["id"], done=done)
 
     @server.tool(annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=False, idempotentHint=True,
                                              openWorldHint=False))
@@ -226,11 +248,12 @@ def build(settings: Settings) -> MCPServer:
         status: Annotated[Literal["new", "progress", "done"], Field(
             description="new, progress (in progress, being worked on) or done; done is the same as complete_task.")],
     ) -> dict:
-        """Move a task to new, in progress or done, as on the page's board."""
+        """Move a task to new, in progress or done, as on the page's board. Done on a repeating task adds
+        the next one, answered as next."""
         user = _user.get()
         with connection() as conn:
             task = _my_task(conn, user["id"], task_id)
-            return _task(tasks.update_task(conn, task["id"], user["id"], status=status))
+            return _status_change(conn, task["id"], user["id"], status=status)
 
     @server.tool(annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=False, idempotentHint=True,
                                              openWorldHint=False))
@@ -241,27 +264,33 @@ def build(settings: Settings) -> MCPServer:
             'The task\'s notes (plain text: links, details), replacing what is there; "" removes them. '
             "Leave out to keep them."))] = None,
         due_date: Annotated[DueDateOrEmpty | None, Field(description=(
-            'The day it\'s due, YYYY-MM-DD, replacing the due date and its time; "" removes it. '
-            "Leave out to keep it."))] = None,
+            'The day it\'s due, YYYY-MM-DD, replacing the due date and its time; "" removes it, and its repeat. '
+            "A repeat set from the old date moves with it. Leave out to keep it."))] = None,
         due_time: Annotated[DueTime | None, Field(description="With due_date: a time that day, HH:MM (24-hour); needs due_zone.")] = None,
         due_zone: Annotated[DueZone | None, Field(
             description='With due_time: the IANA time zone it is in, like "America/New_York" (the user\'s).')] = None,
+        repeat: Annotated[Repeat | None, Field(description=REPEAT_HELP + ' "" stops it. Leave out to keep it.')] = None,
     ) -> dict:
-        """Change a task's title, notes or due date; what's left out stays. Its status stays as it is."""
-        given = {"title": title, "notes": notes, "due_date": due_date, "due_time": due_time, "due_zone": due_zone}
+        """Change a task's title, notes, due date or repeat; what's left out stays. Its status stays as it is."""
+        given = {"title": title, "notes": notes, "due_date": due_date, "due_time": due_time, "due_zone": due_zone,
+                 "repeat": repeat}
         sent = {name for name, value in given.items() if value is not None}
         if not sent:
-            raise ToolError("Nothing to change: give title, notes or due_date.")
+            raise ToolError("Nothing to change: give title, notes, due_date or repeat.")
         problem = due_problem(sent, due_date or None, due_time, due_zone)
         if problem:
             raise ToolError(f"{problem}. {DUE_ZONE_HINT}")
         user = _user.get()
         with connection() as conn:
             task = _my_task(conn, user["id"], task_id)
-            updated = tasks.update_task(conn, task["id"], user["id"], title=title,
-                                        notes=tasks.KEEP if notes is None else notes,
-                                        due_date=tasks.KEEP if due_date is None else due_date or None,
-                                        due_time=due_time, due_zone=due_zone)
+            try:
+                updated = tasks.update_task(conn, task["id"], user["id"], title=title,
+                                            notes=tasks.KEEP if notes is None else notes,
+                                            due_date=tasks.KEEP if due_date is None else due_date or None,
+                                            due_time=due_time, due_zone=due_zone,
+                                            repeat=tasks.KEEP if repeat is None else repeat)
+            except tasks.NoDueDate:
+                raise ToolError("A repeat needs a due date, the first day it's due: give due_date too.") from None
             if updated is None:  # deleted since _my_task
                 raise ToolError("No such task. Task ids come from list_tasks.")
             return _task(updated)

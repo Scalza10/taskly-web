@@ -51,7 +51,8 @@ def test_initialize_and_the_tools(client, token):
     # Each new task's fields are spelled out in place: some clients don't follow $ref.
     assert "$ref" not in json.dumps(tools["add_tasks"]["inputSchema"])
     item = tools["add_tasks"]["inputSchema"]["properties"]["tasks"]["anyOf"][0]["items"]
-    assert {"title", "notes", "due_date", "due_time", "due_zone"} <= set(item["properties"]) and item["required"] == ["title"]
+    assert {"title", "notes", "due_date", "due_time", "due_zone", "repeat"} <= set(item["properties"]) and item["required"] == ["title"]
+    assert "repeat" in tools["update_task"]["inputSchema"]["properties"] and "FROM=DONE" in result["instructions"]
 
 
 def test_no_token_points_at_the_sign_in(anon):
@@ -215,6 +216,60 @@ def test_update_task_notes_and_due_dates(client, token):
     assert "due_zone" in update(due_date="2026-10-21", due_time="09:30", due_zone="Mars/Olympus")
     assert "notes" in update(notes="x" * 2001)
     assert update(title="Oat milk (3)")["due_date"] is None
+
+
+def test_add_repeating_tasks(client, token):
+    new_list(client, "Chores")
+    added = call(client, token, "add_tasks", list="Chores", tasks=[
+        {"title": "Bins", "due_date": "2026-10-19", "repeat": "FREQ=WEEKLY"},
+        {"title": "Plants", "due_date": "2026-10-19", "repeat": "rrule:freq=daily;interval=3;from=done"},
+        {"title": "Rent", "due_date": "2026-10-19", "repeat": ""},
+    ])["added"]
+    # Canonical, with the parts left out taken from the due date.
+    assert [t["repeat"] for t in added] == ["FREQ=WEEKLY;BYDAY=MO", "FREQ=DAILY;INTERVAL=3;FROM=DONE", None]
+    [chores] = call(client, token, "list_tasks", list="Chores")["lists"]
+    assert {t["title"]: t["repeat"] for t in chores["tasks"]} == {
+        "Bins": "FREQ=WEEKLY;BYDAY=MO", "Plants": "FREQ=DAILY;INTERVAL=3;FROM=DONE", "Rent": None}
+    assert "a repeat needs a due_date" in call(client, token, "add_tasks", list="Chores", titles=["Milk"],
+                                               tasks=[{"title": "Bins", "repeat": "FREQ=WEEKLY"}])
+    assert "FREQ" in call(client, token, "add_tasks", list="Chores", tasks=[{"title": "x", "due_date": "2026-10-19", "repeat": "HOURLY"}])
+    assert len(call(client, token, "list_tasks", list="Chores")["lists"][0]["tasks"]) == 3  # nothing more added
+
+
+def test_update_task_repeats(client, token):
+    bins = new_task(client, new_list(client)["id"], "Bins")
+    update = lambda **arguments: call(client, token, "update_task", task_id=bins["id"], **arguments)
+
+    assert "needs a due date" in update(repeat="FREQ=WEEKLY")
+    assert update(due_date="2026-10-19", repeat="FREQ=WEEKLY")["repeat"] == "FREQ=WEEKLY;BYDAY=MO"
+    assert update(title="Bins out", repeat=None)["repeat"] == "FREQ=WEEKLY;BYDAY=MO"  # null: kept
+    assert update(due_date="2026-10-20")["repeat"] == "FREQ=WEEKLY;BYDAY=TU"  # set from the date: moves with it
+    assert update(repeat="FREQ=WEEKLY;BYDAY=MO,TH")["repeat"] == "FREQ=WEEKLY;BYDAY=MO,TH"
+    assert update(repeat="")["repeat"] is None  # "": stopped
+    update(repeat="FREQ=DAILY")
+    assert update(due_date="")["repeat"] is None  # no due date, no repeat
+    assert "FREQ" in update(due_date="2026-10-19", repeat="FREQ=HOURLY")
+    assert "Nothing to change" in update(repeat=None) and "repeat" in update()
+
+
+def test_finishing_a_repeating_task_answers_with_the_next(client, token):
+    chores = new_list(client)
+    bins = call(client, token, "add_tasks", list=chores["id"], tasks=[
+        {"title": "Bins", "notes": "Both", "due_date": "2026-10-19", "repeat": "FREQ=WEEKLY;BYDAY=MO"}])["added"][0]
+
+    done = call(client, token, "complete_task", task_id=bins["id"])
+
+    assert (done["status"], done["repeat"]) == ("done", None)
+    made = done["next"]
+    assert (made["title"], made["notes"], made["status"], made["repeat"]) == ("Bins", "Both", "new", "FREQ=WEEKLY;BYDAY=MO")
+    assert made["due_date"] > "2026-10-19"
+    assert "next" not in call(client, token, "complete_task", task_id=bins["id"])  # done already: nothing more
+    # The board's way, and a plain task: no next.
+    finished = call(client, token, "set_task_status", task_id=made["id"], status="done")
+    assert finished["next"]["repeat"] == "FREQ=WEEKLY;BYDAY=MO" and finished["next"]["due_date"] > made["due_date"]
+    plain = new_task(client, chores["id"], "Milk")
+    assert "next" not in call(client, token, "set_task_status", task_id=plain["id"], status="done")
+    assert len(client.get("/api/sync").json()["lists"][0]["tasks"]) == 4
 
 
 def test_close_and_reopen_a_task(client, token):
