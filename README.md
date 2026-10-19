@@ -290,7 +290,8 @@ frontend/
   src/          the page: React + TypeScript (api.ts calls the API; sync.ts sends the queued task changes and downloads /api/sync)
     store.ts, view.ts, sync.ts, device.ts, useLocal.ts, StatusLine.tsx   the device's copy (IndexedDB) and its queue of unsent changes, what the screen shows, syncing, the page's one store and sync, the hook that triggers syncs, the "N changes waiting" line
     Login.tsx, Header.tsx, ChangePassword.tsx   the login screen, the header (screen tabs, your name, light/dark, the menu) and the phone's tab bar, the password form
-    ListsPage.tsx   everything after logging in: the header and the List, Board and Focus screens
+    ListsPage.tsx   everything after logging in: the header and the Today, List, Board and Focus screens
+    TodayScreen.tsx, today.ts   the Today screen: from every list, what's overdue, due today and in progress, then what was done today; its add bar adds a task due today to the list picked there
     ListScreen.tsx, TaskItem.tsx, NewList.tsx, ListSettings.tsx   the List screen: the picker, the "Due today" filter, the add bar, the tasks, new list, members and rename/delete
     DuePicker.tsx, due.ts   a task's due date and time: the picker under a task (Today, Tomorrow, any day, none; a time if you like; how it repeats), and the chips' labels (today, tomorrow, overdue) and the filter, by the device's date and time zone
     TaskNotes.tsx, notes.ts   a task's notes: the text with its web addresses as links, and the editor under a task
@@ -299,7 +300,7 @@ frontend/
     ClearDone.tsx   "Clear done" (List and Board): deletes a list's finished tasks after an inline confirmation
     SearchScreen.tsx, search.ts   search every list (the header's magnifier), on the device's copy
     FocusScreen.tsx, timer.ts, useTimer.ts   the Focus screen's pomodoro timer, the task focused on and the sessions per task (kept on the device only)
-    stages.ts     a task's stage (status): labels, the Board's buttons and drops, the List's headline
+    stages.ts     a task's stage (status): labels, the Board's buttons and drops, the List's and Today's headlines
     Chrome.tsx, style.css, useWide.ts   shared pieces (wordmark, avatar, blobs), the "Organic" look (Archivo, bundled locally), desktop vs phone at 900px
     pickList.ts, screen.ts   which list and which screen are open
     messages.ts   the text shown for API errors
