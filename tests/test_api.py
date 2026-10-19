@@ -193,6 +193,85 @@ def test_notes_are_checked(client):
     assert lone.status_code == 422
 
 
+def test_repeats(client):
+    made = new_list(client)
+    body = {"id": str(uuid.uuid4()), "list_id": made["id"], "title": "Bins", "due_date": "2026-10-19", "repeat": " freq=weekly "}
+    response = client.post("/api/tasks", json=body)
+    assert response.status_code == 201
+    assert response.json()["repeat"] == "FREQ=WEEKLY;BYDAY=MO"  # canonical, its weekday from the due date
+    path = f"/api/tasks/{body['id']}"
+    # A page from before repeats leaves it alone; moving the date takes it along.
+    for change in [{"title": "Bins out"}, {"notes": "Both"}, {"status": "progress"}, {"done": False}, {"status": "new"}]:
+        assert client.patch(path, json=change).json()["repeat"] == "FREQ=WEEKLY;BYDAY=MO", change
+    assert client.patch(path, json={"due_date": "2026-10-20"}).json()["repeat"] == "FREQ=WEEKLY;BYDAY=TU"
+    assert client.patch(path, json={"repeat": "FREQ=WEEKLY;BYDAY=TH,MO"}).json()["repeat"] == "FREQ=WEEKLY;BYDAY=MO,TH"
+    assert client.patch(path, json={"repeat": ""}).json()["repeat"] is None
+    for stop in [{"repeat": None}, {"due_date": None}]:
+        client.patch(path, json={"due_date": "2026-10-19", "repeat": "FREQ=DAILY"})
+        assert client.patch(path, json=stop).json()["repeat"] is None, stop
+    client.patch(path, json={"due_date": "2026-10-19", "repeat": "FREQ=DAILY;INTERVAL=3;FROM=DONE"})
+    assert sync(client)["lists"][0]["tasks"][0]["repeat"] == "FREQ=DAILY;INTERVAL=3;FROM=DONE"
+    assert new_task(client, made["id"], "Eggs")["repeat"] is None
+
+
+def test_finishing_a_repeating_task_makes_the_next(client):
+    made = new_list(client)
+    body = {"id": str(uuid.uuid4()), "list_id": made["id"], "title": "Bins", "due_date": "2026-10-19", "repeat": "FREQ=WEEKLY"}
+    client.post("/api/tasks", json=body)
+    next_id = str(uuid.uuid4())
+    finish = {"status": "done", "next_id": next_id, "finished_on": "2026-10-21"}
+
+    done = client.patch(f"/api/tasks/{body['id']}", json=finish)
+
+    assert done.status_code == 200
+    assert (done.json()["status"], done.json()["repeat"]) == ("done", None)
+    assert client.patch(f"/api/tasks/{body['id']}", json=finish).status_code == 200  # a retry makes nothing more
+    found = [(t["id"], t["status"], t["due_date"], t["repeat"]) for t in sync(client)["lists"][0]["tasks"]]
+    assert found == [(next_id, "new", "2026-10-26", "FREQ=WEEKLY;BYDAY=MO"), (body["id"], "done", "2026-10-19", None)]
+
+
+def test_a_page_from_before_repeats_finishing_one_makes_the_next(client):
+    from taskly import repeats
+
+    for change in [{"done": True}, {"status": "done"}]:
+        made = new_list(client, str(change))
+        body = {"id": str(uuid.uuid4()), "list_id": made["id"], "title": "Plants", "due_date": "2020-01-06", "repeat": "FREQ=DAILY"}
+        client.post("/api/tasks", json=body)
+        assert client.patch(f"/api/tasks/{body['id']}", json=change).status_code == 200
+        found = next(each for each in sync(client)["lists"] if each["id"] == made["id"])["tasks"]
+        assert [(t["status"], t["due_date"], t["repeat"]) for t in found] == [
+            ("new", repeats.today_for(None), "FREQ=DAILY"), ("done", "2020-01-06", None)], change
+
+
+def test_repeats_are_checked(client):
+    made = new_list(client)
+    task = new_task(client, made["id"])
+    path = f"/api/tasks/{task['id']}"
+    client.patch(path, json={"due_date": "2026-10-19"})
+    for wrong in ["FREQ=HOURLY", "FREQ=WEEKLY;BYDAY=XX", "FREQ=DAILY;" + "x" * 200, 7, ["FREQ=DAILY"]]:
+        assert client.patch(path, json={"repeat": wrong}).status_code == 422, wrong
+        created = client.post("/api/tasks", json={"id": str(uuid.uuid4()), "list_id": made["id"], "title": "x",
+                                                  "due_date": "2026-10-19", "repeat": wrong})
+        assert created.status_code == 422, wrong
+    lone = client.patch(path, content='{"repeat": "FREQ=DAILY\\ud800"}', headers={"Content-Type": "application/json"})
+    assert lone.status_code == 422
+    # A repeat needs a due date: in the body, or already on the task.
+    no_date = client.post("/api/tasks", json={"id": str(uuid.uuid4()), "list_id": made["id"], "title": "x", "repeat": "FREQ=DAILY"})
+    assert no_date.status_code == 422
+    assert client.patch(path, json={"due_date": None, "repeat": "FREQ=DAILY"}).status_code == 422
+    undated = new_task(client, made["id"], "Eggs")
+    refused = client.patch(f"/api/tasks/{undated['id']}", json={"repeat": "FREQ=DAILY"})
+    assert (refused.status_code, refused.json()["detail"]) == (422, "A repeat needs a due date")
+    # What finishing one sends.
+    client.patch(path, json={"due_date": "2026-10-19", "repeat": "FREQ=DAILY"})
+    for wrong in [{"next_id": "7"}, {"finished_on": "2026-02-30"}, {"finished_on": "today"}]:
+        assert client.patch(path, json={"status": "done", **wrong}).status_code == 422, wrong
+    clash = client.patch(path, json={"status": "done", "next_id": undated["id"]})
+    assert (clash.status_code, clash.json()["detail"]) == (409, "That task id is already used")
+    still = next(t for t in sync(client)["lists"][0]["tasks"] if t["id"] == task["id"])
+    assert (still["status"], still["repeat"]) == ("new", "FREQ=DAILY")
+
+
 def test_a_retried_create_changes_nothing(client):
     made = new_list(client)
     task = new_task(client, made["id"], "Milk")

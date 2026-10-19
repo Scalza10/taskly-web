@@ -2,7 +2,7 @@ import uuid
 
 import pytest
 
-from taskly import lists, snapshot, tasks, users
+from taskly import lists, repeats, snapshot, tasks, users
 from conftest import PASSWORD
 
 
@@ -91,6 +91,86 @@ def test_notes_are_set_kept_and_removed(conn, maria, groceries):
     assert (cleared["notes"], cleared["title"], cleared["due_date"]) == (None, "Oat milk", "2026-10-20")
     assert tasks.create_task(conn, new_id(), groceries, "Eggs", maria["id"], notes="")[0]["notes"] is None
     assert tasks.create_task(conn, new_id(), groceries, "Bread", maria["id"])[0]["notes"] is None
+
+
+def test_finishing_a_repeating_task_makes_the_next(conn, maria, tom, groceries):
+    task, _ = tasks.create_task(conn, new_id(), groceries, "Bins", maria["id"], "2026-10-19", "07:30", "Europe/Madrid",
+                                notes="Both of them", repeat="FREQ=WEEKLY")
+    assert task["repeat"] == "FREQ=WEEKLY;BYDAY=MO"  # its weekday, from the due date
+    tasks.update_task(conn, task["id"], tom["id"], status="progress")
+    next_id = new_id()
+
+    done = tasks.update_task(conn, task["id"], tom["id"], status="done", next_id=next_id, finished_on="2026-10-21")
+
+    assert (done["status"], done["done_by"], done["repeat"]) == ("done", "tom", None)  # the repeat moved on
+    made = tasks.get_task(conn, next_id)
+    fields = ("list_id", "title", "notes", "status", "due_date", "due_time", "due_zone", "repeat", "created_by", "done_by")
+    assert {key: made[key] for key in fields} == {
+        "list_id": groceries, "title": "Bins", "notes": "Both of them", "status": "new", "due_date": "2026-10-26",
+        "due_time": "07:30", "due_zone": "Europe/Madrid", "repeat": "FREQ=WEEKLY;BYDAY=MO", "created_by": "maria",
+        "done_by": None,
+    }
+    # Finishing it again (a retry, another device) makes nothing; nor does unticking and finishing
+    # it again: the next one repeats now, and both stay.
+    tasks.update_task(conn, task["id"], tom["id"], status="done", next_id=new_id())
+    reopened = tasks.update_task(conn, task["id"], tom["id"], done=False)
+    assert (reopened["status"], reopened["repeat"]) == ("new", None)
+    tasks.update_task(conn, task["id"], tom["id"], done=True, next_id=new_id())
+    assert len(tasks.list_tasks(conn, groceries)) == 2
+    # The next one makes its own.
+    third = new_id()
+    tasks.update_task(conn, next_id, maria["id"], done=True, next_id=third, finished_on="2026-10-26")
+    assert (tasks.get_task(conn, third)["due_date"], tasks.get_task(conn, next_id)["repeat"]) == ("2026-11-02", None)
+
+
+def test_finished_without_a_day_or_an_id_the_server_picks_them(conn, maria, groceries):
+    task, _ = tasks.create_task(conn, new_id(), groceries, "Water the plants", maria["id"], "2020-01-06", repeat="FREQ=DAILY")
+    tasks.update_task(conn, task["id"], maria["id"], done=True)  # an agent, or a page from before repeats
+    made = [t for t in tasks.list_tasks(conn, groceries) if t["id"] != task["id"]]
+    assert [(t["status"], t["due_date"], t["repeat"]) for t in made] == [("new", repeats.today_for(None), "FREQ=DAILY")]
+    assert str(uuid.UUID(made[0]["id"])) == made[0]["id"]
+
+
+def test_a_repeat_needs_a_due_date(conn, maria, groceries):
+    with pytest.raises(tasks.NoDueDate):
+        tasks.create_task(conn, new_id(), groceries, "Bins", maria["id"], repeat="FREQ=DAILY")
+    task, _ = tasks.create_task(conn, new_id(), groceries, "Bins", maria["id"])
+    with pytest.raises(tasks.NoDueDate):
+        tasks.update_task(conn, task["id"], maria["id"], repeat="FREQ=DAILY")
+    with pytest.raises(tasks.NoDueDate):
+        tasks.update_task(conn, task["id"], maria["id"], due_date=None, repeat="FREQ=DAILY")
+    assert tasks.get_task(conn, task["id"])["repeat"] is None
+    # With the date in the same change, or one set before: anchored on it.
+    monthly = tasks.update_task(conn, task["id"], maria["id"], due_date="2026-10-19", repeat="FREQ=MONTHLY")
+    assert monthly["repeat"] == "FREQ=MONTHLY;BYMONTHDAY=19"
+    # Moving the date takes a repeat set from it along; other changes leave it.
+    assert tasks.update_task(conn, task["id"], maria["id"], due_date="2026-10-31")["repeat"] == "FREQ=MONTHLY;BYMONTHDAY=31"
+    others = tasks.update_task(conn, task["id"], maria["id"], title="Bins out", notes="x", status="progress")
+    assert others["repeat"] == "FREQ=MONTHLY;BYMONTHDAY=31"
+    assert tasks.update_task(conn, task["id"], maria["id"], repeat="FREQ=WEEKLY;BYDAY=MO,TH")["repeat"] == "FREQ=WEEKLY;BYDAY=MO,TH"
+    # Removed: with "" or None, or with the due date.
+    assert tasks.update_task(conn, task["id"], maria["id"], repeat="")["repeat"] is None
+    tasks.update_task(conn, task["id"], maria["id"], repeat="FREQ=DAILY")
+    assert tasks.update_task(conn, task["id"], maria["id"], repeat=None)["repeat"] is None
+    tasks.update_task(conn, task["id"], maria["id"], repeat="FREQ=DAILY")
+    assert tasks.update_task(conn, task["id"], maria["id"], due_date=None)["repeat"] is None
+
+
+def test_a_next_id_thats_taken_changes_nothing(conn, maria, groceries):
+    milk, _ = tasks.create_task(conn, new_id(), groceries, "Milk", maria["id"])
+    task, _ = tasks.create_task(conn, new_id(), groceries, "Bins", maria["id"], "2026-10-19", repeat="FREQ=DAILY")
+    with pytest.raises(tasks.IdTaken):
+        tasks.update_task(conn, task["id"], maria["id"], status="done", next_id=milk["id"])
+    after = tasks.get_task(conn, task["id"])
+    assert (after["status"], after["repeat"]) == ("new", "FREQ=DAILY")
+    assert len(tasks.list_tasks(conn, groceries)) == 2
+
+
+def test_after_the_last_day_there_is_the_repeat_ends(conn, maria, groceries):
+    task, _ = tasks.create_task(conn, new_id(), groceries, "Bins", maria["id"], "9999-12-31", repeat="FREQ=DAILY")
+    done = tasks.update_task(conn, task["id"], maria["id"], done=True, next_id=new_id(), finished_on="9999-12-31")
+    assert (done["status"], done["repeat"]) == ("done", None)
+    assert len(tasks.list_tasks(conn, groceries)) == 1
 
 
 def test_delete_done_deletes_only_that_lists_finished_tasks(conn, maria, groceries):

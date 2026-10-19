@@ -246,6 +246,34 @@ def test_migration_8_adds_empty_notes(tmp_path, monkeypatch):
     assert rows(path, "SELECT notes FROM tasks") == [{"notes": "The oat one\nhttps://example.com"}]
 
 
+def test_migration_9_adds_no_repeats(tmp_path, monkeypatch):
+    path = str(tmp_path / "taskly.db")
+    migrate_to(path, 8, monkeypatch)
+    with sqlite3.connect(path) as conn:
+        conn.executescript("""
+            INSERT INTO users (username, password_hash) VALUES ('maria', 'x');
+            INSERT INTO lists (id, name, owner_id) VALUES ('l1', 'Food', 1);
+            INSERT INTO tasks (id, list_id, title, due_date) VALUES ('t1', 'l1', 'Bins', '2026-10-19');
+            INSERT INTO tasks (id, list_id, title) VALUES ('t2', 'l1', 'Milk');
+        """)
+
+    assert db.migrate(path) == len(db.MIGRATIONS)
+
+    assert rows(path, "SELECT id, repeat FROM tasks ORDER BY id") == [{"id": "t1", "repeat": None}, {"id": "t2", "repeat": None}]
+    with sqlite3.connect(path) as conn:
+        conn.execute("UPDATE tasks SET repeat = 'FREQ=WEEKLY;BYDAY=MO' WHERE id = 't1'")
+        for refused in ["UPDATE tasks SET repeat = 'FREQ=DAILY' WHERE id = 't2'",  # no due date
+                        "UPDATE tasks SET repeat = '' WHERE id = 't1'",
+                        "UPDATE tasks SET due_date = NULL WHERE id = 't1'"]:  # it repeats
+            try:
+                conn.execute(refused)
+            except sqlite3.IntegrityError:
+                pass
+            else:
+                raise AssertionError(f"should be refused: {refused}")
+    assert rows(path, "SELECT repeat FROM tasks WHERE id = 't1'") == [{"repeat": "FREQ=WEEKLY;BYDAY=MO"}]
+
+
 def test_deleting_a_list_deletes_its_tasks_and_members(tmp_path):
     path = str(tmp_path / "taskly.db")
     db.migrate(path)

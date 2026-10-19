@@ -153,6 +153,11 @@ MIGRATIONS = [
     """
     ALTER TABLE tasks ADD COLUMN notes TEXT CHECK (notes IS NULL OR notes <> '');
     """,
+    # 9: how a task repeats, a rule like 'FREQ=WEEKLY;BYDAY=MO' (repeats.py): finishing it makes the
+    # next one, which takes the rule over. Only with a due date, the schedule's day; no repeat is NULL.
+    """
+    ALTER TABLE tasks ADD COLUMN repeat TEXT CHECK (repeat IS NULL OR (due_date IS NOT NULL AND repeat GLOB 'FREQ=*'));
+    """,
 ]
 
 
