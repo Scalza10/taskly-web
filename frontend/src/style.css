@@ -328,11 +328,12 @@ ul.steps { display: flex; flex-direction: column; gap: 4px; padding-left: 20px; 
 
 .tasks { display: flex; flex-direction: column; gap: 8px; }
 
-/* On a phone: box, title, × on top; the chip, the due date and "added by" in a row under the title. */
+/* On a phone: box, title, star, × on top; the chip, the due date and "added by" in a row under the
+   title, the timer at its end. */
 .task {
   display: grid;
   grid-template-columns: 24px 1fr 32px 32px;
-  grid-template-areas: "check title focus delete" "check meta focus delete";
+  grid-template-areas: "check title star delete" "check meta focus delete";
   align-items: center;
   gap: 8px 14px;
   padding: 16px 10px 16px 16px;
@@ -346,9 +347,10 @@ ul.steps { display: flex; flex-direction: column; gap: 4px; padding-left: 20px; 
 .task .by { min-width: 0; font-size: 12px; color: var(--muted); }
 .task .delete { grid-area: delete; align-self: start; margin-top: -4px; }
 .task .focus-on { grid-area: focus; align-self: start; margin-top: -4px; }
+.task .star { grid-area: star; align-self: start; margin-top: -4px; }
 .task.done .title { text-decoration: line-through; opacity: 0.5; }
 /* Notes: their first two lines under the title. */
-.task.has-notes { grid-template-areas: "check title focus delete" "check note focus delete" "check meta focus delete"; }
+.task.has-notes { grid-template-areas: "check title star delete" "check note . delete" "check meta focus delete"; }
 .task .task-note { grid-area: note; min-width: 0; cursor: text; }
 .task-note, .card-notes {
   display: -webkit-box;
@@ -385,10 +387,13 @@ input.title { padding: 0; border: 0; border-bottom: 1px solid var(--primary); ou
 .chip-progress { background: var(--tint-strong); color: var(--on-tint); }
 .chip-done { background: var(--chip-done); }
 
-/* × and the timer button (focus on this task). */
-.delete, .focus-on { display: grid; flex: none; place-items: center; width: 32px; height: 32px; border-radius: 50%; color: var(--muted); }
-.delete svg, .focus-on svg { width: 16px; height: 16px; }
-.delete:hover, .focus-on:hover { background: var(--ground); }
+/* ×, the star and the timer button (focus on this task). */
+.delete, .focus-on, .task .star { display: grid; flex: none; place-items: center; width: 32px; height: 32px; border-radius: 50%; color: var(--muted); }
+.delete svg, .focus-on svg, .task .star svg { width: 16px; height: 16px; }
+.delete:hover, .focus-on:hover, .task .star:hover { background: var(--ground); }
+/* Starred: a filled star in the brand color, on the List, Today and the Board. */
+.star.on { color: var(--brand); }
+.star.on svg { fill: currentColor; }
 
 /* A due date: a calendar and the day. Overdue stands out, today is tinted, the rest are quiet. */
 .due {
@@ -612,14 +617,14 @@ button.clear-done { align-self: flex-start; }
 
   .tasks { gap: 10px; }
   .task {
-    grid-template-columns: 26px 1fr auto 36px 36px;
-    grid-template-areas: "check title chip focus delete" "check details chip focus delete";
+    grid-template-columns: 26px 1fr auto 36px 36px 36px;
+    grid-template-areas: "check title chip star focus delete" "check details chip star focus delete";
     gap: 3px 16px;
     padding: 18px 16px 18px 20px;
     border-radius: 24px;
   }
-  .task.has-notes { grid-template-areas: "check title chip focus delete" "check note chip focus delete" "check details chip focus delete"; }
-  .task .check, .task .delete, .task .focus-on { align-self: center; margin-top: 0; }
+  .task.has-notes { grid-template-areas: "check title chip star focus delete" "check note chip star focus delete" "check details chip star focus delete"; }
+  .task .check, .task .delete, .task .focus-on, .task .star { align-self: center; margin-top: 0; }
   .task .title { font-size: 17px; }
   .task .meta { display: contents; }
   .task .chip { grid-area: chip; }
@@ -629,8 +634,8 @@ button.clear-done { align-self: flex-start; }
   .chip { padding: 5px 12px; font-size: 12px; }
   .due { padding: 3px 10px; font-size: 12px; }
   .filter { padding: 7px 7px 7px 14px; font-size: 15px; }
-  .delete { width: 36px; height: 36px; }
-  .delete svg { width: 18px; height: 18px; }
+  .delete, .task .star { width: 36px; height: 36px; }
+  .delete svg, .task .star svg { width: 18px; height: 18px; }
 
   .board-screen { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; padding: 16px 32px 32px; }
   .column { gap: 12px; padding: 20px; border-radius: 28px; }

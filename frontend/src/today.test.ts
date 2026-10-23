@@ -12,7 +12,7 @@ afterEach(() => vi.unstubAllEnvs());
 
 function task(id: string, extra: Partial<Task> = {}): Task {
   return {
-    id, list_id: "", title: id, status: "new", done: false, due_date: null, due_time: null, due_zone: null, notes: null, repeat: null,
+    id, list_id: "", title: id, status: "new", done: false, due_date: null, due_time: null, due_zone: null, notes: null, repeat: null, starred: false,
     created_by: "maria", done_by: null, created_at: "2026-10-01T12:00:00Z", updated_at: "2026-10-01T12:00:00Z", ...extra,
   };
 }
@@ -44,6 +44,29 @@ test("overdue, due today and in progress, from every list; tomorrow's and the re
   expect(ids(view.progress)).toEqual(["started-tomorrow", "started"]); // each task once: due ones first
   expect(view.done).toEqual([]);
   expect(view.today.map((entry) => entry.list.name)).toEqual(["Home", "Home", "Work"]);
+});
+
+test("starred: every open starred task, whatever its date, and only there", () => {
+  const home = list("Home", [
+    task("yesterday", { due_date: "2026-10-18" }),
+    task("starred-overdue", { due_date: "2026-10-18", starred: true }),
+    task("starred-today", { due_date: "2026-10-19", starred: true }),
+    task("starred-next-week", { due_date: "2026-10-26", starred: true }),
+    task("starred-someday", { starred: true }),
+    task("someday"),
+  ]);
+  const work = list("Work", [
+    task("starred-started", { status: "progress", starred: true }),
+    done("starred-done", "2026-10-19T13:00:00Z", { starred: true }),
+  ]);
+
+  const view = todayView([home, work], now);
+
+  // As a list sorts them: due ones soonest first, then the oldest.
+  expect(ids(view.starred)).toEqual(["starred-overdue", "starred-today", "starred-next-week", "starred-someday", "starred-started"]);
+  expect(ids(view.overdue)).toEqual(["yesterday"]);
+  expect([...view.today, ...view.progress]).toEqual([]);
+  expect(ids(view.done)).toEqual(["starred-done"]);
 });
 
 test("done today: finished today on this device's clock, the latest first", () => {

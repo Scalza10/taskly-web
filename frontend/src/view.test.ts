@@ -4,7 +4,7 @@ import type { QueuedChange } from "./store";
 import { applyQueue, clearDoneChanges, statusText, syncedLabel } from "./view";
 
 function task(id: string, created_at: string, extra: Partial<Task> = {}): Task {
-  return { id, list_id: "L", title: id, status: "new", done: false, due_date: null, due_time: null, due_zone: null, notes: null, repeat: null, created_by: "tom", done_by: null, created_at, updated_at: created_at, ...extra };
+  return { id, list_id: "L", title: id, status: "new", done: false, due_date: null, due_time: null, due_zone: null, notes: null, repeat: null, starred: false, created_by: "tom", done_by: null, created_at, updated_at: created_at, ...extra };
 }
 
 const snapshot: Snapshot = {
@@ -231,6 +231,48 @@ test("tasks with a due date come first, soonest first; a date alone after that d
   } finally {
     vi.unstubAllEnvs();
   }
+});
+
+test("starred tasks come first, above overdue ones; done stays last", () => {
+  const list = (tasks: Task[]): Snapshot => ({ ...snapshot, lists: [{ ...snapshot.lists[0], tasks }] });
+  const shown = applyQueue(list([
+    task("overdue", "2026-10-10T07:00:00Z", { due_date: "2020-01-01" }),
+    task("undated", "2026-10-10T08:00:00Z"),
+    task("starred, undated", "2026-10-10T09:00:00Z", { starred: true }),
+    task("starred, Oct 20", "2026-10-10T10:00:00Z", { due_date: "2026-10-20", starred: true }),
+    task("starred, done", "2026-10-10T11:00:00Z", { due_date: "2020-01-01", starred: true, status: "done", done: true }),
+    task("starred, in progress", "2026-10-10T12:00:00Z", { starred: true, status: "progress" }),
+  ]), []);
+  expect(titles(shown)).toEqual(["starred, Oct 20", "starred, undated", "starred, in progress", "overdue", "undated", "starred, done"]);
+});
+
+test("a star set and removed offline moves the task, as the server will; other changes leave it", () => {
+  const starred = applyQueue(snapshot, [
+    { method: "PATCH", path: "/api/tasks/bread", body: { starred: true }, queuedAt: at },
+    { method: "PATCH", path: "/api/tasks/bread", body: { title: "rye bread", status: "progress", notes: "x" }, queuedAt: at },
+    { method: "POST", path: "/api/tasks", body: { id: "n1", list_id: "L", title: "jam", starred: true }, queuedAt: at },
+    { method: "POST", path: "/api/tasks", body: { id: "n2", list_id: "L", title: "tea" }, queuedAt: at },
+  ]);
+  expect(titles(starred)).toEqual(["rye bread", "jam", "eggs", "tea", "milk"]);
+  expect(byId(starred).bread).toMatchObject({ starred: true, pending: true });
+  expect(byId(starred).n2.starred).toBe(false);
+  const unstarred = applyQueue(snapshot, [
+    { method: "PATCH", path: "/api/tasks/bread", body: { starred: true }, queuedAt: at },
+    { method: "PATCH", path: "/api/tasks/bread", body: { starred: false }, queuedAt: at },
+  ]);
+  expect(titles(unstarred)).toEqual(["eggs", "bread", "milk"]);
+});
+
+test("a snapshot stored before stars has none", () => {
+  const old = structuredClone(snapshot);
+  for (const t of old.lists[0].tasks) delete (t as Partial<Task>).starred;
+  expect(applyQueue(old, []).lists[0].tasks.map((t) => t.starred)).toEqual([false, false, false]);
+});
+
+test("a repeating task's next one keeps the star", () => {
+  const copy = repeating();
+  copy.lists[0].tasks[0].starred = true;
+  expect(byId(applyQueue(copy, [finish("eggs", "e2")])).e2.starred).toBe(true);
 });
 
 test("setting a due date moves a task up, as the server will", () => {

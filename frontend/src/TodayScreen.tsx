@@ -1,5 +1,5 @@
-// The Today screen: from every list, what's overdue, what's due today (timed ones in time order)
-// and what's in progress, then what was finished today, crossed out until midnight (today.ts). The
+// The Today screen: from every list, what's starred (whatever its date), what's overdue, what's due
+// today (timed ones in time order) and what's in progress, then what was finished today, crossed out until midnight (today.ts). The
 // rows are the List screen's, with their list's name, all in one list so a row that changes section
 // (a time passes, someone starts it) keeps an open editor. The add bar adds a task due today to the
 // list picked next to it (remembered on this device; no picker with only one list).
@@ -18,7 +18,7 @@ import { useWide } from "./useWide";
 
 type Props = { lists: TaskList[]; local: Local; enqueue: Enqueue; onFocus: (taskId: string, listId: string) => void };
 
-const SECTIONS: [keyof Today, string][] = [["overdue", "Overdue"], ["today", "Today"], ["progress", "In progress"], ["done", "Done today"]];
+const SECTIONS: [keyof Today, string][] = [["starred", "Starred"], ["overdue", "Overdue"], ["today", "Today"], ["progress", "In progress"], ["done", "Done today"]];
 
 export function TodayScreen({ lists, local, enqueue, onFocus }: Props) {
   const wide = useWide();
@@ -28,7 +28,7 @@ export function TodayScreen({ lists, local, enqueue, onFocus }: Props) {
   // Worked out on every draw (each sync redraws, at least every 30 s), as on the List screen.
   const now = new Date();
   const view = todayView(lists, now);
-  const open = view.overdue.length + view.today.length + view.progress.length;
+  const open = view.starred.length + view.overdue.length + view.today.length + view.progress.length;
   const target = pickList(lists, picked, savedList());
   const sections = SECTIONS.filter(([key]) => view[key].length > 0);
 
@@ -93,7 +93,7 @@ export function TodayScreen({ lists, local, enqueue, onFocus }: Props) {
           ])}
         </ul>
       ) : (
-        <Empty>Nothing due today. What's overdue, due today or in progress in any list shows here.</Empty>
+        <Empty>Nothing due today. What's starred, overdue, due today or in progress in any list shows here.</Empty>
       )}
       {wide ? status : <div className="list-footer">{status}</div>}
     </div>

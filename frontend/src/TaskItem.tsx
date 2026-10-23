@@ -3,11 +3,11 @@
 // lines show under it (click them to read them all and edit), the chip shows its stage, the
 // calendar chip its due date and time (on an open task without one, just the calendar; a repeating
 // one adds the repeat mark) and opens the due date picker, the notes button opens the notes (on an
-// open task without any, adds them), the timer button (open tasks) focuses on it on the Focus
-// screen, × deletes. One editor opens at a time. On Today it names its list (listName), in its
+// open task without any, adds them), the star stars it (on a done task, shown only if starred), the
+// timer button (open tasks) focuses on it on the Focus screen, × deletes. One editor opens at a time. On Today it names its list (listName), in its
 // labels too, as two lists can each have an "Eggs". A task opened from search scrolls into view
 // and lights up for a moment (found).
-import { CalendarDays, CalendarPlus, Check, NotebookPen, NotebookText, Repeat, Timer, X } from "lucide-react";
+import { CalendarDays, CalendarPlus, Check, NotebookPen, NotebookText, Repeat, Star, Timer, X } from "lucide-react";
 import { useEffect, useRef, useState, type FocusEvent, type KeyboardEvent, type MouseEvent } from "react";
 import type { Task } from "./api";
 import { deviceZone, dueInput, dueOf, localDay, type DueInput } from "./due";
@@ -134,6 +134,18 @@ export function TaskItem({ task, now, enqueue, onFocus, found = false, listName 
           {by && <small className="by">{by}</small>}
         </span>
       </span>
+      {(!done || task.starred) && (
+        <button
+          type="button"
+          className={task.starred ? "star on" : "star"}
+          aria-pressed={task.starred}
+          aria-label={`star "${name}"`}
+          title={task.starred ? "Starred" : "Star"}
+          onClick={() => void enqueue({ method: "PATCH", path, body: { starred: !task.starred } })}
+        >
+          <Star aria-hidden="true" />
+        </button>
+      )}
       {!done && (
         <button type="button" className="focus-on" aria-label={`focus on "${name}"`} title="Focus on this" onClick={() => onFocus(task.id)}>
           <Timer size={18} aria-hidden="true" />

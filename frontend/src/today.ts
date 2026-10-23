@@ -1,16 +1,16 @@
-// The Today screen's tasks: from every list, what's overdue, what's due today and what's in
-// progress, then what was finished today. Placed by the chips' own rules (due.ts) on this device's
-// date, so a time set in another zone falls on the day it is here, and a time that has passed
-// today is overdue, as its chip says.
+// The Today screen's tasks: from every list, what's starred (whatever its date: above all, as on a
+// list), what's overdue, what's due today and what's in progress, then what was finished today.
+// Placed by the chips' own rules (due.ts) on this device's date, so a time set in another zone
+// falls on the day it is here, and a time that has passed today is overdue, as its chip says.
 import type { Task, TaskList } from "./api";
 import { dueOf, localDay } from "./due";
 import { sortTasks } from "./view";
 
 export type Entry = { task: Task; list: TaskList };
-export type Today = { overdue: Entry[]; today: Entry[]; progress: Entry[]; done: Entry[] };
+export type Today = { starred: Entry[]; overdue: Entry[]; today: Entry[]; progress: Entry[]; done: Entry[] };
 
 export function todayView(lists: TaskList[], now: Date): Today {
-  const found: Today = { overdue: [], today: [], progress: [], done: [] };
+  const found: Today = { starred: [], overdue: [], today: [], progress: [], done: [] };
   const today = localDay(now);
   for (const list of lists) {
     for (const task of list.tasks) {
@@ -22,12 +22,14 @@ export function todayView(lists: TaskList[], now: Date): Today {
         continue;
       }
       const kind = dueOf(task, now)?.kind;
-      if (kind === "overdue") found.overdue.push(entry);
+      if (task.starred) found.starred.push(entry);
+      else if (kind === "overdue") found.overdue.push(entry);
       else if (kind === "today") found.today.push(entry);
       else if (task.status === "progress") found.progress.push(entry);
     }
   }
   return {
+    starred: sorted(found.starred),
     overdue: sorted(found.overdue),
     today: sorted(found.today),
     progress: sorted(found.progress),

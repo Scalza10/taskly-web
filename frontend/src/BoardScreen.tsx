@@ -2,9 +2,10 @@
 // card's button moves its task on: Start, Finish, Reopen; an In progress card also has Back (to
 // New). On a desktop a card can also be dragged to another column; on a phone (where the columns
 // stack and dragging fights scrolling) the buttons are the way. An open card's timer button focuses
-// on it on the Focus screen. A card with a due date or notes shows them (the notes' first two lines;
-// a repeating task's date with the repeat mark; set them on the List screen). Done ends with "Clear done".
-import { ArrowLeft, ArrowRight, CalendarDays, Repeat, Timer } from "lucide-react";
+// on it on the Focus screen, and its star stars it (a done card shows it only if starred). A card with
+// a due date or notes shows them (the notes' first two lines; a repeating task's date with the repeat
+// mark; set them on the List screen). Done ends with "Clear done".
+import { ArrowLeft, ArrowRight, CalendarDays, Repeat, Star, Timer } from "lucide-react";
 import { useState, type DragEvent } from "react";
 import type { Status, Task, TaskList } from "./api";
 import { Avatar, Empty } from "./Chrome";
@@ -96,6 +97,18 @@ export function BoardScreen({ list, enqueue, onFocus }: Props) {
                       <span className="by">
                         {wide ? <><Avatar name={task.created_by} size="sm" />{task.created_by}</> : `added by ${task.created_by}`}
                       </span>
+                    )}
+                    {(status !== "done" || task.starred) && (
+                      <button
+                        type="button"
+                        className={task.starred ? "action icon-action star on" : "action icon-action star"}
+                        aria-pressed={task.starred}
+                        aria-label={`Star: ${task.title}`}
+                        title={task.starred ? "Starred" : "Star"}
+                        onClick={() => void enqueue({ method: "PATCH", path: `/api/tasks/${task.id}`, body: { starred: !task.starred } })}
+                      >
+                        <Star size={14} strokeWidth={2.5} aria-hidden="true" />
+                      </button>
                     )}
                     {status !== "done" && (
                       <button type="button" className="action icon-action" aria-label={`Focus on: ${task.title}`} title="Focus on this" onClick={() => onFocus(task.id)}>
