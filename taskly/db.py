@@ -158,6 +158,10 @@ MIGRATIONS = [
     """
     ALTER TABLE tasks ADD COLUMN repeat TEXT CHECK (repeat IS NULL OR (due_date IS NOT NULL AND repeat GLOB 'FREQ=*'));
     """,
+    # 10: a star on a task, shared by the list: open starred tasks sort above all others.
+    """
+    ALTER TABLE tasks ADD COLUMN starred INTEGER NOT NULL DEFAULT 0 CHECK (starred IN (0, 1));
+    """,
 ]
 
 

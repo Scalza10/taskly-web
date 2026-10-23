@@ -274,6 +274,31 @@ def test_migration_9_adds_no_repeats(tmp_path, monkeypatch):
     assert rows(path, "SELECT repeat FROM tasks WHERE id = 't1'") == [{"repeat": "FREQ=WEEKLY;BYDAY=MO"}]
 
 
+def test_migration_10_stars_nothing(tmp_path, monkeypatch):
+    path = str(tmp_path / "taskly.db")
+    migrate_to(path, 9, monkeypatch)
+    with sqlite3.connect(path) as conn:
+        conn.executescript("""
+            INSERT INTO users (username, password_hash) VALUES ('maria', 'x');
+            INSERT INTO lists (id, name, owner_id) VALUES ('l1', 'Food', 1);
+            INSERT INTO tasks (id, list_id, title) VALUES ('t1', 'l1', 'Milk');
+        """)
+
+    assert db.migrate(path) == len(db.MIGRATIONS)
+
+    assert rows(path, "SELECT id, starred FROM tasks") == [{"id": "t1", "starred": 0}]
+    with sqlite3.connect(path) as conn:
+        conn.execute("UPDATE tasks SET starred = 1 WHERE id = 't1'")
+        for refused in ["UPDATE tasks SET starred = 2 WHERE id = 't1'", "UPDATE tasks SET starred = NULL WHERE id = 't1'"]:
+            try:
+                conn.execute(refused)
+            except sqlite3.IntegrityError:
+                pass
+            else:
+                raise AssertionError(f"should be refused: {refused}")
+    assert rows(path, "SELECT starred FROM tasks") == [{"starred": 1}]
+
+
 def test_deleting_a_list_deletes_its_tasks_and_members(tmp_path):
     path = str(tmp_path / "taskly.db")
     db.migrate(path)

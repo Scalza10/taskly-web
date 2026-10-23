@@ -193,6 +193,27 @@ def test_notes_are_checked(client):
     assert lone.status_code == 422
 
 
+def test_stars(client):
+    made = new_list(client)
+    body = {"id": str(uuid.uuid4()), "list_id": made["id"], "title": "Call the bank", "starred": True}
+    response = client.post("/api/tasks", json=body)
+    assert response.status_code == 201
+    assert response.json()["starred"] is True
+    path = f"/api/tasks/{body['id']}"
+    # A page from before stars leaves it alone, whatever it changes.
+    for change in [{"status": "progress"}, {"done": True}, {"done": False}, {"title": "Call the bank (loan)"},
+                   {"due_date": "2026-10-20"}, {"notes": "Ask for Sam"}, {"starred": None}]:
+        assert client.patch(path, json=change).json()["starred"] is True, change
+    assert client.patch(path, json={"starred": False}).json()["starred"] is False
+    for wrong in [7, "maybe", ["x"]]:
+        assert client.patch(path, json={"starred": wrong}).status_code == 422, wrong
+    # Starred sorts first in the sync, above an overdue task.
+    client.post("/api/tasks", json={"id": str(uuid.uuid4()), "list_id": made["id"], "title": "Eggs", "due_date": "2020-01-01"})
+    client.patch(path, json={"starred": True, "due_date": None})
+    assert [t["title"] for t in sync(client)["lists"][0]["tasks"]] == ["Call the bank (loan)", "Eggs"]
+    assert new_task(client, made["id"], "Bread")["starred"] is False
+
+
 def test_repeats(client):
     made = new_list(client)
     body = {"id": str(uuid.uuid4()), "list_id": made["id"], "title": "Bins", "due_date": "2026-10-19", "repeat": " freq=weekly "}

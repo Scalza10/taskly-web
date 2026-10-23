@@ -94,12 +94,14 @@ class TaskCreate(DueRepeat):
     list_id: UUID
     title: Title
     notes: Notes | None = None
+    starred: bool = False
 
 
 class TaskUpdate(Due):  # due_date, notes or repeat: null removes it (and the date's time); left out, it stays
     title: Title | None = None
     notes: Notes | None = None  # "" removes them too
     repeat: Repeat | None = None  # "" removes it too, and so does removing the due date
+    starred: bool | None = None  # null or left out: the star stays
     done: bool | None = None  # what pages before the board send; status wins if both are given
     status: Literal["new", "progress", "done"] | None = None
     # When this change finishes a repeating task: the next one's id (made by the page, so its copy
@@ -193,7 +195,8 @@ def create_task(body: TaskCreate, response: Response, user: CurrentUser, conn: C
     require_role(conn, str(body.list_id), user)
     try:
         task, created = tasks.create_task(conn, str(body.id), str(body.list_id), body.title, user["id"],
-                                          body.due_date, body.due_time, body.due_zone, body.notes, body.repeat)
+                                          body.due_date, body.due_time, body.due_zone, body.notes, body.repeat,
+                                          body.starred)
     except sqlite3.IntegrityError:  # the list was deleted since the role check
         raise HTTPException(status_code=404, detail="No such list") from None
     if task["list_id"] != str(body.list_id):
@@ -212,7 +215,7 @@ def update_task(task_id: UUID, body: TaskUpdate, user: CurrentUser, conn: Conn) 
     try:
         task = tasks.update_task(conn, str(task_id), user["id"], title=body.title, done=body.done, status=body.status,
                                  due_date=due_date, due_time=body.due_time, due_zone=body.due_zone, notes=notes,
-                                 repeat=repeat, next_id=body.next_id and str(body.next_id), finished_on=body.finished_on)
+                                 repeat=repeat, starred=body.starred, next_id=body.next_id and str(body.next_id), finished_on=body.finished_on)
     except tasks.NoDueDate as error:
         raise HTTPException(status_code=422, detail=str(error)) from None
     except tasks.IdTaken:

@@ -93,9 +93,21 @@ def test_notes_are_set_kept_and_removed(conn, maria, groceries):
     assert tasks.create_task(conn, new_id(), groceries, "Bread", maria["id"])[0]["notes"] is None
 
 
+def test_a_star_is_set_kept_and_removed(conn, maria, groceries):
+    task, _ = tasks.create_task(conn, new_id(), groceries, "Milk", maria["id"])
+    assert task["starred"] is False
+    assert tasks.update_task(conn, task["id"], maria["id"], starred=True)["starred"] is True
+    # Other changes leave it alone, finishing too.
+    kept = tasks.update_task(conn, task["id"], maria["id"], title="Oat milk", status="done", notes="x", due_date="2026-10-20")
+    assert (kept["starred"], kept["status"]) == (True, "done")
+    unstarred = tasks.update_task(conn, task["id"], maria["id"], starred=False)
+    assert (unstarred["starred"], unstarred["status"]) == (False, "done")
+    assert tasks.create_task(conn, new_id(), groceries, "Eggs", maria["id"], starred=True)[0]["starred"] is True
+
+
 def test_finishing_a_repeating_task_makes_the_next(conn, maria, tom, groceries):
     task, _ = tasks.create_task(conn, new_id(), groceries, "Bins", maria["id"], "2026-10-19", "07:30", "Europe/Madrid",
-                                notes="Both of them", repeat="FREQ=WEEKLY")
+                                notes="Both of them", repeat="FREQ=WEEKLY", starred=True)
     assert task["repeat"] == "FREQ=WEEKLY;BYDAY=MO"  # its weekday, from the due date
     tasks.update_task(conn, task["id"], tom["id"], status="progress")
     next_id = new_id()
@@ -104,11 +116,12 @@ def test_finishing_a_repeating_task_makes_the_next(conn, maria, tom, groceries):
 
     assert (done["status"], done["done_by"], done["repeat"]) == ("done", "tom", None)  # the repeat moved on
     made = tasks.get_task(conn, next_id)
-    fields = ("list_id", "title", "notes", "status", "due_date", "due_time", "due_zone", "repeat", "created_by", "done_by")
+    fields = ("list_id", "title", "notes", "status", "due_date", "due_time", "due_zone", "repeat", "starred", "created_by",
+              "done_by")
     assert {key: made[key] for key in fields} == {
         "list_id": groceries, "title": "Bins", "notes": "Both of them", "status": "new", "due_date": "2026-10-26",
-        "due_time": "07:30", "due_zone": "Europe/Madrid", "repeat": "FREQ=WEEKLY;BYDAY=MO", "created_by": "maria",
-        "done_by": None,
+        "due_time": "07:30", "due_zone": "Europe/Madrid", "repeat": "FREQ=WEEKLY;BYDAY=MO", "starred": True,
+        "created_by": "maria", "done_by": None,
     }
     # Finishing it again (a retry, another device) makes nothing; nor does unticking and finishing
     # it again: the next one repeats now, and both stay.
@@ -247,6 +260,25 @@ def test_tasks_with_a_due_date_come_first_soonest_first(conn, maria, groceries):
         "Oct 18, 6 pm in La Palma", "Oct 18, 3 pm in Florida", "Oct 18, the day", "Oct 19", "Oct 20",
         "undated, oldest", "undated, newer",
         "Oct 17, done", "undated, done",
+    ]
+
+
+def test_starred_tasks_come_first(conn, maria, groceries):
+    def add(title, due_date=None, starred=False, status=None):
+        task, _ = tasks.create_task(conn, new_id(), groceries, title, maria["id"], due_date, starred=starred)
+        if status:
+            tasks.update_task(conn, task["id"], maria["id"], status=status)
+    add("overdue", "2020-01-01")
+    add("undated")
+    add("starred, undated", starred=True)
+    add("starred, Oct 20", "2026-10-20", starred=True)
+    add("starred, done", "2020-01-01", starred=True, status="done")
+    add("starred, in progress", starred=True, status="progress")
+    # Starred above everything open, overdue too; among them as among the rest; done stays last.
+    assert [t["title"] for t in tasks.list_tasks(conn, groceries)] == [
+        "starred, Oct 20", "starred, undated", "starred, in progress",
+        "overdue", "undated",
+        "starred, done",
     ]
 
 

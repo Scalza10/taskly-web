@@ -2,7 +2,8 @@
 Every function takes an open connection and returns plain dicts (status as 'new', 'progress' or
 'done', plus done as a bool for older pages and agents; people by name; due_date as '2026-10-17'
 or None, with due_time as '15:00' in due_zone, the time zone it was set in, or both None; notes as
-text or None, never ''; repeat as a rule like 'FREQ=WEEKLY;BYDAY=MO' (repeats.py) or None)."""
+text or None, never ''; repeat as a rule like 'FREQ=WEEKLY;BYDAY=MO' (repeats.py) or None;
+starred as a bool)."""
 
 import sqlite3
 from datetime import UTC, datetime
@@ -25,7 +26,7 @@ class IdTaken(Exception):
 
 
 SELECT = """SELECT t.id, t.list_id, t.title, t.status, t.due_date, t.due_time, t.due_zone, t.notes, t.repeat,
-                   c.username AS created_by, d.username AS done_by, t.created_at, t.updated_at
+                   t.starred, c.username AS created_by, d.username AS done_by, t.created_at, t.updated_at
             FROM tasks t
             LEFT JOIN users c ON c.id = t.created_by
             LEFT JOIN users d ON d.id = t.done_by"""
@@ -34,6 +35,7 @@ SELECT = """SELECT t.id, t.list_id, t.title, t.status, t.due_date, t.due_time, t
 def _to_dict(row: sqlite3.Row) -> dict:
     task = dict(row)
     task["done"] = task["status"] == "done"
+    task["starred"] = bool(task["starred"])
     return task
 
 
@@ -53,17 +55,19 @@ def _due_moment(task: dict) -> float:
 
 
 def list_tasks(conn: sqlite3.Connection, list_id: str) -> list[dict]:
-    # Not done first (in progress too); then the ones with a due date, soonest first; then oldest
-    # first, rowid breaking ties within the same second (sorted keeps that order for equal keys).
+    # Not done first (in progress too); then the starred ones; then the ones with a due date, soonest
+    # first; then oldest first, rowid breaking ties within the same second (sorted keeps that order
+    # for equal keys).
     rows = conn.execute(f"{SELECT} WHERE t.list_id = ? ORDER BY t.created_at, t.rowid", (list_id,))
     found = [_to_dict(row) for row in rows]
-    return sorted(found, key=lambda t: (t["done"], t["due_date"] is None, _due_moment(t) if t["due_date"] else 0))
+    return sorted(found, key=lambda t: (t["done"], not t["starred"], t["due_date"] is None,
+                                        _due_moment(t) if t["due_date"] else 0))
 
 
 def create_task(conn: sqlite3.Connection, task_id: str, list_id: str, title: str, user_id: int,
                 due_date: str | None = None, due_time: str | None = None,
                 due_zone: str | None = None, notes: str | None = None,
-                repeat: str | None = None) -> tuple[dict, bool]:
+                repeat: str | None = None, starred: bool = False) -> tuple[dict, bool]:
     """(task, created). If the id exists already (a device retrying), the stored task, unchanged.
     Empty notes are no notes, an empty repeat none; a repeat is anchored on the due date (NoDueDate without one)."""
     if repeat and not due_date:
@@ -71,10 +75,10 @@ def create_task(conn: sqlite3.Connection, task_id: str, list_id: str, title: str
     try:
         with conn:
             conn.execute(
-                "INSERT INTO tasks (id, list_id, title, created_by, due_date, due_time, due_zone, notes, repeat)"
-                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "INSERT INTO tasks (id, list_id, title, created_by, due_date, due_time, due_zone, notes, repeat, starred)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (task_id, list_id, title, user_id, due_date, due_time, due_zone, notes or None,
-                 repeats.anchored(repeat, due_date) if repeat else None),
+                 repeats.anchored(repeat, due_date) if repeat else None, int(starred)),
             )
     except sqlite3.IntegrityError:
         existing = get_task(conn, task_id)
@@ -87,9 +91,10 @@ def create_task(conn: sqlite3.Connection, task_id: str, list_id: str, title: str
 def update_task(conn: sqlite3.Connection, task_id: str, user_id: int, *, title: str | None = None,
                 done: bool | None = None, status: str | None = None, due_date=KEEP,
                 due_time: str | None = None, due_zone: str | None = None, notes=KEEP, repeat=KEEP,
-                next_id: str | None = None, finished_on: str | None = None) -> dict | None:
+                starred: bool | None = None, next_id: str | None = None, finished_on: str | None = None) -> dict | None:
     """Changes only the fields given. due_date replaces the due date as a whole, its due_time and
     due_zone too (None: no time); due_date=None removes it. notes=None or '' removes the notes.
+    starred=None leaves the star; finishing doesn't remove it.
     repeat replaces the rule, anchored on the due date (None or '': it doesn't repeat; NoDueDate if
     there is no date). Moving the due date moves a rule anchored on it (repeats.moved); removing it
     stops the repeat.
@@ -121,6 +126,9 @@ def update_task(conn: sqlite3.Connection, task_id: str, user_id: int, *, title: 
         if notes is not KEEP:
             assignments.append("notes = ?")
             values.append(notes or None)
+        if starred is not None:
+            assignments.append("starred = ?")
+            values.append(int(starred))
         if status is None and done is not None:
             status = "done" if done else None
             if not done:
@@ -143,8 +151,8 @@ def update_task(conn: sqlite3.Connection, task_id: str, user_id: int, *, title: 
 
 
 def _make_next(conn: sqlite3.Connection, task: dict, next_id: str | None, finished_on: str | None) -> None:
-    """A repeating task was just finished: the next one, a copy (list, title, notes, time, zone, its
-    author) due on the next day of the rule, new, with the rule, which this one gives up; so a
+    """A repeating task was just finished: the next one, a copy (list, title, notes, time, zone, star,
+    its author) due on the next day of the rule, new, with the rule, which this one gives up; so a
     series has one repeating task, and reopening this one doesn't make another. next_id: its id,
     made by the page so its copy and the server's agree (IdTaken if it's another task's); else a new
     one. finished_on: the finisher's date; else today_for. Inside update_task's transaction."""
@@ -154,8 +162,8 @@ def _make_next(conn: sqlite3.Connection, task: dict, next_id: str | None, finish
         if conn.execute("SELECT 1 FROM tasks WHERE id = ?", (new_id,)).fetchone():
             raise IdTaken(new_id)
         conn.execute(
-            "INSERT INTO tasks (id, list_id, title, created_by, due_date, due_time, due_zone, notes, repeat)"
-            " SELECT ?, list_id, title, created_by, ?, due_time, due_zone, notes, repeat FROM tasks WHERE id = ?",
+            "INSERT INTO tasks (id, list_id, title, created_by, due_date, due_time, due_zone, notes, repeat, starred)"
+            " SELECT ?, list_id, title, created_by, ?, due_time, due_zone, notes, repeat, starred FROM tasks WHERE id = ?",
             (new_id, day, task["id"]),
         )
     conn.execute("UPDATE tasks SET repeat = NULL WHERE id = ?", (task["id"],))
