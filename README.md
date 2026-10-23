@@ -439,6 +439,19 @@ image has no `taskly.backup`).
 Whoever deploys last wins: the VM gets exactly that person's commit. **Pull
 before you deploy**, so you don't roll back the other person's changes.
 
+Once the app is replaced, the script tags the deployed commit `deploy/<UTC time>`
+(for example `deploy/2026-10-23-181502`) and pushes the tag, so the newest
+`deploy/` tag is what the site runs. To see what's on `main` but not deployed:
+
+```powershell
+git fetch --tags
+$live = git tag -l "deploy/*" | Select-Object -Last 1
+git log --oneline "$live..main"
+```
+
+If the push fails (offline, say), the deploy still counts; the script prints the
+`git push origin <tag>` to run later.
+
 ### First deploy (once, on the VM)
 
 1. **DNS.** Create the DuckDNS subdomain and point it at the VM's IP, the same

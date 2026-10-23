@@ -11,6 +11,7 @@ unless the key is loaded in ssh-agent.
 On the VM it builds the new image while the old app keeps serving, backs up the database
 (~/taskly/data/backups, newest 10), migrates it with the new image, and only then replaces
 the app. A failing build or migration stops there: the old app keeps running.
+Once the app is replaced it tags the commit deploy/<UTC time> and pushes the tag to origin.
 Only ~/taskly on the VM changes. Caddy (~/proxy), Reels and any other app keep running,
 and ~/taskly/.env is never touched.
 #>
@@ -49,9 +50,11 @@ try {
     }
     $commit = git log -1 --format="%h %s" $Branch
     if ($LASTEXITCODE -ne 0) { throw "No branch '$Branch' with a commit to deploy." }
+    # The commit itself, so the archive and the tag below are the same one even if the branch moves meanwhile.
+    $sha = git rev-parse --verify "$Branch^{commit}"
     Write-Host "Deploying $Branch ($commit) to $site"
 
-    Invoke-Native "Packing $Branch" { git archive --format=tar.gz -o $archive $Branch }
+    Invoke-Native "Packing $Branch" { git archive --format=tar.gz -o $archive $sha }
     Invoke-Native "Uploading to $($settings.VmHost)" { scp -i $keyFile $archive "${target}:~/taskly.tar.gz" }
     # One ssh call (one passphrase prompt), stopping at the first failure:
     # - the code is replaced, not unpacked over the old copy: every top-level entry of the archive
@@ -81,6 +84,19 @@ try {
     ) -join " && "
     Invoke-Native "Building, backing up, migrating and restarting on the VM" {
         ssh -i $keyFile $target $steps
+    }
+
+    # The VM now runs this commit: tag it (deploy/<UTC time>) and push the tag, so the newest
+    # deploy/ tag is what's live and `git log <it>..main` what isn't yet. Only after the step above
+    # succeeded: a failed build or migration leaves the old app running. The deploy is done by now,
+    # so a failure here only warns.
+    $tag = "deploy/" + (Get-Date).ToUniversalTime().ToString("yyyy-MM-dd-HHmmss")
+    Write-Host "==> Tagging $tag and pushing it"
+    git tag -a $tag -m "Deployed $Branch" $sha
+    if ($LASTEXITCODE -ne 0) { Write-Warning "Could not tag $sha as $tag." }
+    else {
+        git push origin $tag
+        if ($LASTEXITCODE -ne 0) { Write-Warning "Could not push $tag. Push it later: git push origin $tag" }
     }
 }
 finally {
