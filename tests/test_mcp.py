@@ -252,6 +252,23 @@ def test_update_task_repeats(client, token):
     assert "Nothing to change" in update(repeat=None) and "repeat" in update()
 
 
+def test_stars(client, token):
+    new_list(client, "Work")
+    added = call(client, token, "add_tasks", list="Work", titles=["Report"], tasks=[
+        {"title": "Call the bank", "starred": True}, {"title": "Emails", "starred": None}])["added"]
+    assert {t["title"]: t["starred"] for t in added} == {"Report": False, "Call the bank": True, "Emails": False}
+    report = added[0]
+    update = lambda **arguments: call(client, token, "update_task", task_id=report["id"], **arguments)
+
+    assert update(starred=True)["starred"] is True
+    assert update(title="Report (Q3)", starred=None)["starred"] is True  # null: kept
+    # Starred first, in list_tasks as on the page.
+    [work] = call(client, token, "list_tasks", list="Work")["lists"]
+    assert [t["title"] for t in work["tasks"]] == ["Report (Q3)", "Call the bank", "Emails"]
+    assert update(starred=False)["starred"] is False
+    assert "Nothing to change" in update(starred=None) and "starred" in update()
+
+
 def test_finishing_a_repeating_task_answers_with_the_next(client, token):
     chores = new_list(client)
     bins = call(client, token, "add_tasks", list=chores["id"], tasks=[

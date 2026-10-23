@@ -40,7 +40,9 @@ A task's status is new, progress (in progress, being worked on) or done; set_tas
 A task can have notes (plain text: links, details) and a due date (YYYY-MM-DD), optionally with a
 time (HH:MM, 24-hour) in the IANA time zone it is in, like America/New_York: the user's own, so ask
 them if you don't know it. add_tasks sets them on new tasks (its tasks argument).
-update_task changes a task's title, notes, due date or repeat; leave out what stays, "" removes one.
+update_task changes a task's title, notes, due date, repeat or star; leave out what stays, "" removes one.
+A starred task (starred=true; the user's flag for what matters most, shared with the list) sorts
+above all other open tasks.
 A task with a due date can repeat: repeat is an iCalendar RRULE, like FREQ=WEEKLY;BYDAY=MO (every Monday),
 FREQ=WEEKLY;INTERVAL=2;BYDAY=MO,TH or FREQ=MONTHLY;BYMONTHDAY=1; FROM=DONE counts from the day it's
 finished instead of the schedule (FREQ=DAILY;INTERVAL=3;FROM=DONE: 3 days after it's done). Finishing a
@@ -76,6 +78,7 @@ class NewTask(DueRepeat):
     due_zone: Annotated[DueZone | None, Field(
         description='The IANA time zone of due_time, like "America/New_York" (the user\'s).')] = None
     repeat: Annotated[Repeat | None, Field(description=REPEAT_HELP)] = None
+    starred: Annotated[bool | None, Field(description="true stars it: it sorts above the other open tasks.")] = None
 
 
 # Spelled out in the tool's schema rather than as a $ref, which some clients don't follow.
@@ -128,14 +131,15 @@ def _owned_list(conn: sqlite3.Connection, user_id: int, ref: str) -> str:
 def _task(task: dict) -> dict:
     """A task as the agent sees it: list_id is implied by where it is."""
     return {key: task[key] for key in ("id", "title", "notes", "status", "done", "due_date", "due_time", "due_zone",
-                                       "repeat", "created_by", "done_by", "created_at")}
+                                       "repeat", "starred", "created_by", "done_by", "created_at")}
 
 
 def _add(conn: sqlite3.Connection, list_id: str, user_id: int, title: str, notes: str | None = None,
          due_date: str | None = None, due_time: str | None = None, due_zone: str | None = None,
-         repeat: str | None = None) -> dict:
+         repeat: str | None = None, starred: bool | None = None) -> dict:
     """A new task (out here: add_tasks' argument "tasks" hides the module)."""
-    task, _ = tasks.create_task(conn, str(uuid4()), list_id, title, user_id, due_date, due_time, due_zone, notes, repeat)
+    task, _ = tasks.create_task(conn, str(uuid4()), list_id, title, user_id, due_date, due_time, due_zone, notes, repeat,
+                                bool(starred))
     return task
 
 
@@ -190,8 +194,8 @@ def build(settings: Settings) -> MCPServer:
         list: Annotated[str | None, Field(description="A list's name or id. Leave out for every list.")] = None,
         include_done: Annotated[bool, Field(description="Also return finished tasks.")] = False,
     ) -> dict:
-        """The open tasks (new or in progress) of one list, or of every list: soonest due first, then
-        the ones without a due date, oldest first.
+        """The open tasks (new or in progress) of one list, or of every list: starred first, then
+        soonest due first, then the ones without a due date, oldest first.
         include_done adds the finished ones after them."""
         user = _user.get()
         with connection() as conn:
@@ -216,11 +220,11 @@ def build(settings: Settings) -> MCPServer:
         list: Annotated[str, Field(description="The list's name or id.")],
         titles: Annotated[list[Title] | None, Field(max_length=50, description="One title per task.")] = None,
         tasks: Annotated[list[NewTaskItem] | None, Field(max_length=50, description=(
-            "Tasks with notes, a due date or a repeat, each {title, notes?, due_date?, due_time?, due_zone?, repeat?}; "
-            "added after the titles."))] = None,
+            "Tasks with notes, a due date, a repeat or a star, each {title, notes?, due_date?, due_time?, due_zone?, "
+            "repeat?, starred?}; added after the titles."))] = None,
     ) -> dict:
-        """Add tasks to a list: titles for plain ones, tasks for ones with notes, a due date or a repeat,
-        up to 50 in all. Returns the new tasks with their ids."""
+        """Add tasks to a list: titles for plain ones, tasks for ones with notes, a due date, a repeat or a
+        star, up to 50 in all. Returns the new tasks with their ids."""
         user = _user.get()
         items = [{"title": title} for title in titles or []] + [item.model_dump() for item in tasks or []]
         if not items:
@@ -277,13 +281,15 @@ def build(settings: Settings) -> MCPServer:
         due_zone: Annotated[DueZone | None, Field(
             description='With due_time: the IANA time zone it is in, like "America/New_York" (the user\'s).')] = None,
         repeat: Annotated[Repeat | None, Field(description=REPEAT_HELP + ' "" stops it. Leave out to keep it.')] = None,
+        starred: Annotated[bool | None, Field(description=(
+            "true stars it (it sorts above the other open tasks), false removes the star. Leave out to keep it."))] = None,
     ) -> dict:
-        """Change a task's title, notes, due date or repeat; what's left out stays. Its status stays as it is."""
+        """Change a task's title, notes, due date, repeat or star; what's left out stays. Its status stays as it is."""
         given = {"title": title, "notes": notes, "due_date": due_date, "due_time": due_time, "due_zone": due_zone,
-                 "repeat": repeat}
+                 "repeat": repeat, "starred": starred}
         sent = {name for name, value in given.items() if value is not None}
         if not sent:
-            raise ToolError("Nothing to change: give title, notes, due_date or repeat.")
+            raise ToolError("Nothing to change: give title, notes, due_date, repeat or starred.")
         problem = due_problem(sent, due_date or None, due_time, due_zone)
         if problem:
             raise ToolError(f"{problem}. {DUE_ZONE_HINT}")
@@ -295,7 +301,7 @@ def build(settings: Settings) -> MCPServer:
                                             notes=tasks.KEEP if notes is None else notes,
                                             due_date=tasks.KEEP if due_date is None else due_date or None,
                                             due_time=due_time, due_zone=due_zone,
-                                            repeat=tasks.KEEP if repeat is None else repeat)
+                                            repeat=tasks.KEEP if repeat is None else repeat, starred=starred)
             except tasks.NoDueDate:
                 raise ToolError("A repeat needs a due date, the first day it's due: give due_date too.") from None
             if updated is None:  # deleted since _my_task
